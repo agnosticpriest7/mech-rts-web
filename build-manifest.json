@@ -1,0 +1,258 @@
+{
+  "format": 1,
+  "sourceBaseline": "a382c7f19d6b4618e2f97e7e8e46ab1bffa60551",
+  "apiUrl": "https://mech-rts-play-api.twist-1676.chatgpt.site/api/game",
+  "localOnly": false,
+  "files": [
+    {
+      "path": ".nojekyll",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/alloy-extractor-console.glb",
+      "bytes": 990356,
+      "sha256": "86b45550c05a6f52ed341b15c809bada77129a87545030a8b8233b339832366f"
+    },
+    {
+      "path": "assets/artillery-v5-1-console.glb",
+      "bytes": 5556964,
+      "sha256": "d880c9c63da27681b0164d2a5b817c3fea96b75c37c2ca4fad40acdfc79472ca"
+    },
+    {
+      "path": "assets/audio/mech-twin-chainguns-v4.mp3",
+      "bytes": 321836,
+      "sha256": "4fca00b362141bfcdc52d94866428f1c9b560caf773627f2167a6297d21ccc2a"
+    },
+    {
+      "path": "assets/audio/music/steel-horizon-v2.mp3",
+      "bytes": 5270818,
+      "sha256": "b0a2611cd7cf4052db65a381d2842756c43163da56b3dddc902dcc9a9962bb2b"
+    },
+    {
+      "path": "assets/audio/music/steel-horizon-v3.mp3",
+      "bytes": 5633006,
+      "sha256": "0c4156326319f2c04a48d338022229dad9092c21338e97e9d26b64a627a876c3"
+    },
+    {
+      "path": "assets/audio/music/steel-horizon-v4.mp3",
+      "bytes": 5253700,
+      "sha256": "66f2d9c53a6e69b41b70dd565b53b34a07cafacdb49f3ccf447b39dfec511063"
+    },
+    {
+      "path": "assets/audio/music/steel-horizon.mp3",
+      "bytes": 5075518,
+      "sha256": "1abc24029865054c212f3f3abc0c876dc92454b55d8b81193f78f592dbe6e253"
+    },
+    {
+      "path": "assets/autocannon-sentry-console.glb",
+      "bytes": 766548,
+      "sha256": "5c1afb9ce61c6a542a0e10f0af18456f0bd6d4812c391fbb8a428341c7cc3d21"
+    },
+    {
+      "path": "assets/ground-anchor-hq.glb",
+      "bytes": 6183232,
+      "sha256": "0ba5cffb7f35e75ed1ed5ac4d120de28d123cc92ba96470600c79d4e621390c1"
+    },
+    {
+      "path": "assets/heavy_crawler-console.glb",
+      "bytes": 1452924,
+      "sha256": "6bdde5f81dd9cf756296519e2f986ae63aa4e7dd9b6c7bf24d40fc62acd8eb92"
+    },
+    {
+      "path": "assets/m06-console.glb",
+      "bytes": 3047796,
+      "sha256": "b91c6cedb77978d61dd6a6238428a4bb28b80b25dd324dad6a13d3b8bb3fe6ae"
+    },
+    {
+      "path": "assets/swarm_runner-console.glb",
+      "bytes": 1311964,
+      "sha256": "2dc88f9bc14676c6177cec4cd7fdff6d4cf5a7f63f74987d5e536257b329aeb4"
+    },
+    {
+      "path": "assets/worker-rigged.glb",
+      "bytes": 2219668,
+      "sha256": "9415f9c73021d5e9854000ee2b8e82c0a7707b40a7cfdf6dfd48a493d60ff591"
+    },
+    {
+      "path": "favicon.svg",
+      "bytes": 712,
+      "sha256": "e6d2e59b7b5bbb0342e0fb496dfc262decbfe4426bbb7b047aec8d467d1dc6f7"
+    },
+    {
+      "path": "index.html",
+      "bytes": 16597,
+      "sha256": "b327a9362beb4e1469054ca2eff2fb73e32f76a0145092c7ad71a33bcb461b1c"
+    },
+    {
+      "path": "src/alien-art.js",
+      "bytes": 2103,
+      "sha256": "5020a968e03a79cff56bf4b15b5a8dbf6aa295b6407690376a808a02cc9b2323"
+    },
+    {
+      "path": "src/artillery-art.js",
+      "bytes": 3033,
+      "sha256": "e45d5ee6fcf306ad972a27c6ef192f6b559267d968c8da689a93ad0570bcd34e"
+    },
+    {
+      "path": "src/basin-terrain.js",
+      "bytes": 4619,
+      "sha256": "7cd212b3b3d9f34ef7d0125d5d86f0a4ebb7cfd5e037636d15e1e033c2505e56"
+    },
+    {
+      "path": "src/client.js",
+      "bytes": 104087,
+      "sha256": "61e2d3d227634bb99576361d2ae75e85e1841438c2e5bcbbcdc84f070d9d1ee7"
+    },
+    {
+      "path": "src/drop-pad-art.js",
+      "bytes": 3533,
+      "sha256": "5c3f6612ed3047113ca35728c3bf165c9daa709e9cd49c08ad48ccff77c6097a"
+    },
+    {
+      "path": "src/economy-buildings.js",
+      "bytes": 11734,
+      "sha256": "a2d9c66d35ce703726fc2bc31540e9ba929d4b1b9bfa029f4f066f620fea7766"
+    },
+    {
+      "path": "src/economy-rules.js",
+      "bytes": 6628,
+      "sha256": "47eed964fe227e1388b140bc47876db7b254dd3653ff4788d5bd928df8c0c910"
+    },
+    {
+      "path": "src/economy-ui.js",
+      "bytes": 2627,
+      "sha256": "4f6d5da1e1e8f948e041ed92b14a5f718e0d4762c0b6017dd3d426669b39178e"
+    },
+    {
+      "path": "src/frontier-map.js",
+      "bytes": 5993,
+      "sha256": "29f85cfdf1eeab27673c0e13229b26abca59f7f15e175cef7f372ef59a9d0514"
+    },
+    {
+      "path": "src/gamepad.js",
+      "bytes": 3644,
+      "sha256": "e4568be39a2b796c425959bde14a29c12ac2c5d00dc2e8ac8c6987babe2c1718"
+    },
+    {
+      "path": "src/gatling-audio.js",
+      "bytes": 17678,
+      "sha256": "32723db6b94744f73b141687b024bd1cfdaf86b36a4ca3b474dec7d18a227bbf"
+    },
+    {
+      "path": "src/hive-art.js",
+      "bytes": 6418,
+      "sha256": "f6351d01fcf26a1fd0423fad32182b2e5ab1e387c73f8b23cba4f256a2c6d19e"
+    },
+    {
+      "path": "src/landing.js",
+      "bytes": 8787,
+      "sha256": "240e3c4eb58da5387a02eede09e43f6aa8d9e59a9da94ab609512d23e18a7d7b"
+    },
+    {
+      "path": "src/mech-factory.js",
+      "bytes": 9019,
+      "sha256": "ac800e88ef40861bb19935d9f23b490c5be6487ee6a6f2bbadfe8b2341cf7d2e"
+    },
+    {
+      "path": "src/mech-landing.js",
+      "bytes": 4944,
+      "sha256": "8552e1751eaee0a4121a6ff67b9c27063523f1e9f6086c9ba04a4b17e9f17878"
+    },
+    {
+      "path": "src/mission-ui.js",
+      "bytes": 4616,
+      "sha256": "7b8cc1e42f6296d88669dbe98695d9c2d90696fcfd2556de6c35e4129a8990b6"
+    },
+    {
+      "path": "src/motion.js",
+      "bytes": 2615,
+      "sha256": "1306a7e2fc0af2435feef71205fcf1facc0addd003f0199525e6c543348074f0"
+    },
+    {
+      "path": "src/music-player.js",
+      "bytes": 7201,
+      "sha256": "00d4dc2bcd41c828dc0f7783a9e5813474e6fcdd1c14a76c20145960e3d411b9"
+    },
+    {
+      "path": "src/room-transport.js",
+      "bytes": 2732,
+      "sha256": "38caafcaba0813a7d315dc2593bb7eeb3d4078f3f2c047aabcad8950645565c0"
+    },
+    {
+      "path": "src/runtime-config.js",
+      "bytes": 151,
+      "sha256": "905529fc25bbae4c3fb4f47a47912cf712301a67fb6936eb28306ea02f08dd04"
+    },
+    {
+      "path": "src/selection-controls.js",
+      "bytes": 1361,
+      "sha256": "4af97d848815c43cd82d43fbb2768f159f4d0cf2a640a2d0c8a98947e0d6e11a"
+    },
+    {
+      "path": "src/service-bay.js",
+      "bytes": 3669,
+      "sha256": "e6007f9a22ff8bc9019f71247ce4909194fa2f597abe15b761e815ab1e39249e"
+    },
+    {
+      "path": "src/simulation.js",
+      "bytes": 51411,
+      "sha256": "ff10fafdd183830abd08a50c8bdc09878c756266d2c66c5ac09b8559f70c81db"
+    },
+    {
+      "path": "src/style.css",
+      "bytes": 24992,
+      "sha256": "3609d4c3df2abc4d0ea46fb7ea166a46ec5b2f8bea01b1c0e7d142278fac97f7"
+    },
+    {
+      "path": "src/supply-landing.js",
+      "bytes": 7888,
+      "sha256": "ea5c296545a80256210678b8f62eb287ffae495896d7832679bcf1f72550bc49"
+    },
+    {
+      "path": "src/terrain-clearance.js",
+      "bytes": 1006,
+      "sha256": "6aa84e8ef01c3a782295178ed2a88ee639ffeaac634450d41d4b9d3ed2ca1004"
+    },
+    {
+      "path": "src/weapons.js",
+      "bytes": 2441,
+      "sha256": "17cd5699929c4dd0c45263fa746320668036c9188ab5487b9c7ad40a1f7dde4b"
+    },
+    {
+      "path": "src/world-scale.js",
+      "bytes": 1466,
+      "sha256": "786a4854f9a04fd1b60b607d2150a6ba075470bdcd2ba7f3443a54a8cebe1462"
+    },
+    {
+      "path": "THREE-LICENSE.txt",
+      "bytes": 1081,
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+    },
+    {
+      "path": "vendor-three/addons/loaders/GLTFLoader.js",
+      "bytes": 119861,
+      "sha256": "532ac726e120039acbcd6cf54328c57acbf7b438176afaa6951257126d11bff1"
+    },
+    {
+      "path": "vendor-three/addons/utils/BufferGeometryUtils.js",
+      "bytes": 39153,
+      "sha256": "7bda2a8ba836b2bcf67cb938d4b9e1bb5d1b1bc616817103ed858c0b58296ce7"
+    },
+    {
+      "path": "vendor-three/addons/utils/SkeletonUtils.js",
+      "bytes": 11535,
+      "sha256": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
+    },
+    {
+      "path": "vendor-three/three.core.js",
+      "bytes": 1474799,
+      "sha256": "613e370f76638fdef83926642bf256dc9615684922de1ce1f63a8583e5d78578"
+    },
+    {
+      "path": "vendor-three/three.module.js",
+      "bytes": 658900,
+      "sha256": "104f56145899722094556490d787aae0617cc2fc3382f31df02d724ea1aee341"
+    }
+  ]
+}
