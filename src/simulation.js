@@ -1,5 +1,5 @@
 import { FRONTIER_MAP, mapForState, terrainPointClear, terrainSegmentClear, findTerrainRoute } from './frontier-map.js';
-import {PRODUCTION_RULES,BUILDINGS,UPGRADES,buildingCost,canAfford,spend,costLabel,mechStats,updatePower} from './economy-rules.js';
+import {PRODUCTION_RULES,BUILDINGS,UPGRADES,CONSTRUCTION_DURATIONS,isUnderConstruction,buildingCost,canAfford,spend,costLabel,mechStats,updatePower} from './economy-rules.js?v=field-playtest-1';
 /** Deterministic host-authoritative simulation. Seconds, metres, x/z ground plane.
  * step accepts 0..60 seconds and advances in fixed 50ms ticks; snapshots are copies.
  * No wall clock, randomness, dependencies or client trust. */
@@ -15,8 +15,33 @@ const hostile=e=>e.type==='enemy'||e.type==='hive';
 // preserving existing sustained DPS (19/.60 and 38/1.50), not doubling balance.
 const GATLING_INTERVAL=0.1;
 const gatlingDamage=e=>(e.role==='long-range'?38/15:19/6)*mechStats(e).damageMultiplier;
-const visionRadius=e=>e.type==='pod'?34:e.type==='worker'?18:['mech','turret'].includes(e.type)?28:0;
-export function teamVisible(s,target){return s.entities.some(e=>live(e)&&!dropping(s,e)&&visionRadius(e)>0&&dist(e,target)<=visionRadius(e));}
+// Playtest-only tuning: keep saved rooms on their original rule set until restarted.
+export const FIELD_TUNING=Object.freeze({
+ speed:Object.freeze({mech:1.4,worker:1.65,enemy:1.2}),
+ sight:Object.freeze({pod:68,worker:22,combat:54,'long-range':66,artillery:61,turret:40,extractor:26,generator:32,reactor:38,relay:36,battery:28,'drop-pad':38,'mech-factory':40,'worker-factory':32,'upgrade-station':34,'repair-station':34,wire:9}),
+ range:Object.freeze({combat:33,'long-range':49,artillery:46}),hqBuild:64,mechBuild:48,structureBuild:26
+});
+const commissioned=e=>!(Number.isFinite(e.progress)&&e.progress<1);
+// The authoritative sight test, ground fog, and minimap share this sensor model.
+// A completed building retains passive sight even when it has no power.
+export function sensorRadius(s,e){
+ if(!live(e)||dropping(s,e)||e.owner===-1)return 0;
+ if(!s.playtestVersion)return e.type==='pod'?34:e.type==='worker'?18:['mech','turret'].includes(e.type)?28:0;
+ if(!commissioned(e))return 0;
+ return FIELD_TUNING.sight[e.type==='mech'?(e.role||'combat'):e.type]||0;
+}
+export function teamVisible(s,target){return s.entities.some(e=>{const r=sensorRadius(s,e);return r>0&&dist(e,target)<=r;});}
+export function buildReach(s,p,target){
+ return s.entities.some(e=>{
+  if(!live(e)||dropping(s,e)||!(p===0||e.owner===0||e.owner===p))return false;
+  const r=!s.playtestVersion?(['pod','mech'].includes(e.type)?36:0)
+   :e.type==='pod'?FIELD_TUNING.hqBuild:e.type==='mech'?FIELD_TUNING.mechBuild
+   :commissioned(e)&&Object.hasOwn(BUILDINGS,e.type)?FIELD_TUNING.structureBuild:0;
+  return r>0&&dist(e,target)<=r;
+ });
+}
+const reachHint=s=>s.playtestVersion?'Build within 64m of HQ, 48m of your mech, or 26m of a completed structure.':'Build within 36m of HQ or your mech.';
+export const movementMultiplier=(s,e)=>s?.playtestVersion?(FIELD_TUNING.speed[e.type]||1):1;
 // Presentation dimensions in metres. Only service-pad placements use the new
 // rectangle clearance; legacy rooms and unrelated building rules stay unchanged.
 export const SERVICE_FOOTPRINTS=Object.freeze({'drop-pad':Object.freeze([22,22]),'repair-station':Object.freeze([16,14]),'upgrade-station':Object.freeze([16,14]),'mech-factory':Object.freeze([24,24])});
@@ -61,8 +86,9 @@ function economyMoveFormation(s,es,target){
 }
 function unit(id,type,x,z,hp,owner=0,role=''){return {id,type,x,z,hp,maxHp:hp,owner,angle:0,role,status:'idle',cooldown:0,...(type==='mech'?{shotSerial:0,lastShotSide:null,gatlingEngaged:false,gatlingSpin:0}:{})};}
 function event(s,type,x,z,text,extra={}){s.events.push({id:++s.eventId,type,x,z,text,time:s.time,...extra});if(s.events.length>100)s.events.splice(0,s.events.length-100);}
-export function createGame({legacy=false,production=true,map=null}={}){
+export function createGame({legacy=false,production=true,map=null,playtest=map===FRONTIER_MAP.id}={}){
  const s={version:1,time:0,tick:0,remainder:0,phase:'running',endReason:null,resources:180,wave:0,nextWaveAt:225,hvdReadyAt:0,entities:[unit('pod','pod',30,120,1600),unit('hive','hive',132,30,2600,-1),unit('mech-1','mech',36,111,650,1,'combat'),unit('mech-2','mech',24,111,460,2,'long-range'),...Array.from({length:3},(_,i)=>({...unit(`worker-${i+1}`,'worker',25+i*5,132,100),cargo:0,approachSlot:i}))],deposits:[{id:'ore-safe',x:19,z:99,remaining:1600},{id:'ore-mid',x:72,z:92,remaining:2000},{id:'ore-risk',x:109,z:56,remaining:2400}],events:[],eventId:0,nextId:10,kills:0};
+ if(playtest&&!legacy)s.playtestVersion=1;
  s.mission={id:'first-landing',title:'Secure the landing zone',oreDelivered:0,oreTarget:60,extractorBuilt:false,repairStationBuilt:false,repairStationFreeUsed:false,repairStationFreeAvailable:true,repaired:false,turretBuilt:false,swarmDefeated:false,swarmAt:RULES.waveTimes[0],objectives:[],activeObjective:'harvest'};
  // Landing damage makes the free HQ repair lesson visible without jeopardizing the defense.
  s.entities.find(e=>e.id==='mech-1').hp-=120;
@@ -130,6 +156,7 @@ export function applyCommand(s,p,c){
  if(s.phase!=='running')return fail('Mission has ended.');
  if(!c||typeof c!=='object')return fail('Invalid command.');
  const pod=s.entities.find(e=>e.type==='pod'&&live(e));
+ if(s.playtestVersion){const result=constructionCommand(s,p,c);if(result)return result;}
  if(s.economyVersion){const result=economyCommand(s,p,c);if(result)return result;}
  if(['move','attack','mine','repair'].includes(c.type)){
   const es=chosen(s,p,c);if(!es)return fail('Select living units you control.');
@@ -138,14 +165,15 @@ export function applyCommand(s,p,c){
   if(es.some(e=>e.upgradeJob))return fail('Cancel the upgrade before giving this mech another order.');
   if(c.type==='move'&&!point(s,c))return fail('Destination is outside the map.');
   if(c.type==='move'&&es.some(e=>e.type==='worker')&&pod&&dist(pod,c)<9)return fail('Workers cannot enter the HQ hull.');
-  if(c.type==='move'&&es.some(e=>e.type==='worker')&&s.entities.some(e=>live(e)&&e.type==='wire'&&dist(e,c)<7))return fail('Workers cannot enter razor wire.');
+  if(c.type==='move'&&es.some(e=>e.type==='worker')&&s.entities.some(e=>live(e)&&e.type==='wire'&&!isUnderConstruction(e)&&dist(e,c)<7))return fail('Workers cannot enter razor wire.');
   if(c.type==='attack'&&(es.some(e=>e.type!=='mech')||!s.entities.some(e=>e.id===c.targetId&&live(e)&&hostile(e)&&teamVisible(s,e))))return fail('Choose a currently visible hostile target and mechs.');
   if(c.type==='mine'&&(es.some(e=>e.type!=='worker')||!s.deposits.some(d=>d.id===c.depositId&&d.remaining>0)))return fail('Choose workers and a deposit with ore.');
   if(c.type==='repair'&&(es.some(e=>e.type!=='mech')||!pod))return fail('Only mechs can repair at the pod.');
-  if(c.type==='repair'&&c.targetId!==undefined&&!s.entities.some(e=>live(e)&&['repair-station','pod'].includes(e.type)&&e.id===c.targetId))return fail('Choose a living repair station or HQ.');
+  if(c.type==='repair'&&c.targetId!==undefined&&!s.entities.some(e=>live(e)&&!isUnderConstruction(e)&&['repair-station','pod'].includes(e.type)&&e.id===c.targetId))return fail('Choose a completed repair station or HQ.');
   const formation=c.type==='move'&&s.economyVersion?economyMoveFormation(s,es,c):null;
   if(c.type==='move'&&mapForState(s))for(const e of es){const goal=formation?.get(e.id)||c;if(!findTerrainRoute(mapForState(s),e,goal,bodyRadius(e)))return fail('Choose accessible terrain, clear of cliffs and water.');}
   for(const [i,e] of es.entries()){
+   if(s.playtestVersion)releaseConstruction(s,e,true);
    releaseService(s,e);
    delete e.detour;delete e.routeData;delete e.workTimer;e.order={type:c.type};e.status=c.type;
    if(c.type==='move'){const slot=formation?.get(e.id);e.order.x=slot?.x??Math.max(0,Math.min(worldSize(s),c.x+(es.length>1?(i%3-1)*3:0)));e.order.z=slot?.z??Math.max(0,Math.min(worldSize(s),c.z+(es.length>1?Math.floor(i/3)*3:0)));if(e.type==='worker'&&pod&&dist(e.order,pod)<9){const angle=Math.atan2(e.order.z-pod.z,e.order.x-pod.x);e.order.x=pod.x+Math.cos(angle)*9;e.order.z=pod.z+Math.sin(angle)*9;}}
@@ -162,10 +190,11 @@ export function applyCommand(s,p,c){
  if(c.type==='build'&&c.kind==='extractor'){
   const deposit=s.deposits.find(d=>c.depositId?d.id===c.depositId:point(s,c)&&dist(d,c)<=6);
   if(!deposit||deposit.remaining<=0)return fail('Place an extractor on a deposit with resources.');
-  if(!teamVisible(s,deposit)||!s.entities.some(e=>live(e)&&['pod','mech'].includes(e.type)&&(p===0||e.owner===0||e.owner===p)&&dist(e,deposit)<=36))return fail('Build on a visible deposit within 36m of HQ or your mech.');
+  if(!teamVisible(s,deposit)||!buildReach(s,p,deposit))return fail('Choose a visible deposit. '+reachHint(s));
   if(!servicePlacementClear(s,'extractor',deposit))return fail('Keep the service-pad footprint clear.');
   if(s.entities.some(e=>live(e)&&e.type==='extractor'&&e.depositId===deposit.id))return fail('This deposit already has an extractor.');
   if(s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,deposit)<8))return fail('Building position is occupied.');
+  if(s.playtestVersion)return startConstruction(s,p,'extractor',deposit,{alloy:RULES.extractorCost},{depositId:deposit.id});
   const worker=s.entities.filter(e=>live(e)&&e.type==='worker'&&e.order?.type!=='construct').sort((a,b)=>dist(a,deposit)-dist(b,deposit))[0];
   if(!worker)return fail('An available worker is needed to build an extractor.');
   if(s.resources<RULES.extractorCost)return fail(`Need ${RULES.extractorCost} resources.`);
@@ -176,14 +205,14 @@ export function applyCommand(s,p,c){
  }
  if(c.type==='build'){
   if(!['turret','wire','repair-station'].includes(c.kind)||!point(s,c))return fail('Invalid building or position.');
-  const builders=s.entities.filter(e=>live(e)&&!dropping(s,e)&&(e.type==='pod'||e.type==='mech')&&(p===0||e.owner===0||e.owner===p));
-  if(!builders.some(e=>dist(e,c)<=36))return fail('Build within 36m of the pod or your mech.');
+  if(!buildReach(s,p,c))return fail(reachHint(s));
   if(!teamVisible(s,c))return fail('Building position must be in team vision.');
   if(s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,c)<(c.kind==='wire'?7:8)))return fail('Building position is occupied.');
   if(s.deposits.some(d=>dist(d,c)<6))return fail('Keep mining deposits clear.');
   if(!servicePlacementClear(s,c.kind,c))return fail('Keep the full service-pad footprint clear.');
   const cap=c.kind==='repair-station'?RULES.repairStationCap:c.kind==='turret'?8:16,cost=c.kind==='repair-station'?(s.mission&&!s.mission.repairStationFreeUsed?0:RULES.repairStationCost):c.kind==='turret'?70:20;
   if(s.entities.filter(e=>live(e)&&e.type===c.kind).length>=cap)return fail('Building cap reached.');if(s.resources<cost)return fail(`Need ${cost} resources.`);
+  if(s.playtestVersion)return startConstruction(s,p,c.kind,c,{alloy:cost});
   s.resources-=cost;s.entities.push(unit(`${c.kind}-${s.nextId++}`,c.kind,c.x,c.z,c.kind==='repair-station'?450:c.kind==='turret'?320:180));event(s,'build',c.x,c.z,c.kind==='wire'?'Razor wire deployed':c.kind==='repair-station'?'Repair station online':'Turret online');if(s.mission&&c.kind==='turret')s.mission.turretBuilt=true;if(s.mission&&c.kind==='repair-station'){s.mission.repairStationBuilt=true;s.mission.repairStationFreeUsed=true;}updatePower(s);updateObjectives(s);finish(s);return {ok:true};
  }
  if(c.type==='hvd'){
@@ -195,6 +224,93 @@ export function applyCommand(s,p,c){
   event(s,'hvd',source.x,source.z,'PROTOTYPE HVD',{tx:c.x,tz:c.z});finish(s);return {ok:true};
  }
  return fail('Unknown command.');
+}
+// Construction is authoritative, persisted in snapshots, and deliberately has
+// no client timer. One worker must reach a clear edge before any paid work advances.
+function constructionApproach(s,worker,building){
+ const [width,depth]=footprint(building.type),x=width/2+1.6,z=depth/2+1.6;
+ const points=[[0,z],[-x,0],[x,0],[0,-z],[-x,z],[x,z],[-x,-z],[x,-z]].map(([dx,dz],i)=>({x:building.x+dx,z:building.z+dz,i}));
+ const blockers=s.entities.filter(e=>live(e)&&e.id!==building.id&&!['worker','mech','enemy'].includes(e.type));
+ const terrain=mapForState(s);
+ return points.filter(p=>(building.type!=='mech-factory'||p.z<=building.z||Math.abs(p.x-building.x)>=width/2)&&point(s,p)&&terrainPointClear(terrain,p,1)&&blockers.every(b=>{
+  const [w,d]=footprint(b.type);return Math.abs(p.x-b.x)>=w/2+1||Math.abs(p.z-b.z)>=d/2+1;
+ })).sort((a,b)=>dist(worker,a)-dist(worker,b)||a.i-b.i).find(p=>!terrain||findTerrainRoute(terrain,worker,p,1))||null;
+}
+function availableBuilder(s,building,player,{automatic=false,includeBusy=false}={}){
+ const workers=s.entities.filter(e=>live(e)&&e.type==='worker'&&(player===0||e.owner===0||e.owner===player)&&(includeBusy||e.order?.type!=='construct')&&(!automatic||!e.order||e.order.type==='mine'));
+ workers.sort((a,b)=>Number(!!a.order)-Number(!!b.order)||dist(a,building)-dist(b,building)||a.id.localeCompare(b.id));
+ for(const worker of workers){const approach=constructionApproach(s,worker,building);if(approach)return {worker,approach};}return null;
+}
+function assignBuilder(building,worker,approach){
+ if(worker.order?.type==='mine')worker.constructionReturnOrder={type:'mine',depositId:worker.order.depositId};
+ else delete worker.constructionReturnOrder;
+ delete worker.detour;delete worker.routeData;delete worker.workTimer;
+ worker.order={type:'construct',targetId:building.id,x:approach.x,z:approach.z};worker.status='moving-to-build';
+ building.builderId=worker.id;building.status='moving-to-build';building.construction.paused=false;
+}
+function releaseConstruction(s,worker,pause=false){
+ if(worker.order?.type!=='construct')return;
+ const building=s.entities.find(b=>b.id===worker.order.targetId&&b.construction&&isUnderConstruction(b));
+ if(building?.builderId===worker.id){delete building.builderId;building.construction.paused=pause;building.status=pause?'construction-paused':'waiting-for-builder';}
+ delete worker.constructionReturnOrder;
+}
+function returnBuilder(s,worker,building){
+ const previous=worker.constructionReturnOrder;delete worker.constructionReturnOrder;delete worker.order;delete worker.routeData;delete worker.detour;delete worker.workTimer;worker.status='idle';
+ const depositId=building?.type==='extractor'&&building.progress===1?building.depositId:previous?.depositId;
+ const deposit=s.deposits.find(d=>d.id===depositId&&d.remaining>0);
+ if(deposit){worker.order={type:'mine',depositId};worker.status=worker.cargo>=20||(worker.cargo>0&&(worker.cargoType||'alloy')!==(deposit.resourceType||'alloy'))?'returning':'mining';}
+}
+function startConstruction(s,player,kind,position,cost,extra={}){
+ if(!canAfford(s,cost))return fail(`Need ${costLabel(cost)}.`);
+ if(BUILDINGS[kind]&&s.entities.filter(e=>live(e)&&e.type===kind).length>=BUILDINGS[kind].cap)return fail('Building cap reached.');
+ const building={...unit(`${kind}-${s.nextId}`,kind,position.x,position.z,BUILDINGS[kind]?.hp||180),...extra,progress:0,status:'waiting-for-builder',construction:{duration:CONSTRUCTION_DURATIONS[kind],cost:{...cost},owner:player,paused:false},...(kind==='battery'?{energy:0}:{})};
+ const available=availableBuilder(s,building,player);
+ if(!available&&!availableBuilder(s,building,player,{includeBusy:true}))return fail('A living worker needs a clear route to this construction site.');
+ spend(s,cost);s.nextId++;s.entities.push(building);
+ if(available)assignBuilder(building,available.worker,available.approach);
+ // Reserve the one free bay when its foundation is paid for, not on completion.
+ if(kind==='repair-station'&&s.mission)s.mission.repairStationFreeUsed=true;
+ updatePower(s);updateObjectives(s);event(s,'build',building.x,building.z,`${BUILDINGS[kind]?.label||'Razor wire'} construction started`);return {ok:true};
+}
+function constructionCommand(s,player,c){
+ if(!['construct','cancel-construction'].includes(c.type))return null;
+ const building=s.entities.find(e=>e.id===c.targetId&&live(e)&&e.construction&&isUnderConstruction(e));
+ if(!building)return fail('Choose an unfinished construction site.');
+ if(c.type==='construct'){
+  const workers=chosen(s,player,c);if(!workers||workers.length!==1||workers[0].type!=='worker')return fail('Select one living worker you control.');
+  const worker=workers[0],assigned=s.entities.find(e=>e.id===building.builderId&&live(e)&&e.order?.type==='construct'&&e.order.targetId===building.id);
+  if(assigned&&assigned.id!==worker.id)return fail('This site already has a builder.');
+  if(assigned?.id===worker.id)return {ok:true};
+  const approach=constructionApproach(s,worker,building);if(!approach)return fail('This worker cannot reach a clear edge of the site.');
+  releaseConstruction(s,worker,true);assignBuilder(building,worker,approach);return {ok:true};
+ }
+ for(const worker of s.entities.filter(e=>live(e)&&e.type==='worker'&&e.order?.type==='construct'&&e.order.targetId===building.id))returnBuilder(s,worker,building);
+ spend(s,building.construction.cost,-Math.max(0,1-building.progress));building.hp=0;building.status='cancelled';delete building.builderId;
+ updatePower(s);event(s,'notice',building.x,building.z,'Construction cancelled; unfinished work refunded.');return {ok:true};
+}
+function dispatchBuilders(s){
+ for(const building of s.entities.filter(e=>live(e)&&e.construction&&isUnderConstruction(e))){
+  const worker=s.entities.find(e=>e.id===building.builderId&&live(e)&&e.order?.type==='construct'&&e.order.targetId===building.id);
+  if(worker)continue;
+  delete building.builderId;
+  if(building.construction.paused){building.status='construction-paused';continue;}
+  const available=availableBuilder(s,building,building.construction.owner,{automatic:true});
+  if(available)assignBuilder(building,available.worker,available.approach);else building.status='waiting-for-builder';
+ }
+}
+function advanceConstruction(s,worker,dt,speed){
+ const building=s.entities.find(e=>e.id===worker.order?.targetId&&live(e)&&e.construction&&isUnderConstruction(e));
+ if(!building||building.builderId!==worker.id){returnBuilder(s,worker,null);return;}
+ worker.status='moving-to-build';building.status='moving-to-build';
+ if(!travel(s,worker,worker.order,speed,dt,.2))return;
+ worker.status='building';building.status='building';worker.angle=Math.atan2(building.x-worker.x,building.z-worker.z);
+ building.progress=Math.min(1,building.progress+dt/building.construction.duration);
+ if(building.progress<1-1e-9)return;
+ building.progress=1;building.status='online';delete building.builderId;
+ returnBuilder(s,worker,building);
+ if(s.mission){if(building.type==='extractor')s.mission.extractorBuilt=true;if(building.type==='repair-station')s.mission.repairStationBuilt=true;if(building.type==='turret')s.mission.turretBuilt=true;}
+ if(building.type==='extractor')for(const idle of s.entities.filter(e=>live(e)&&e.type==='worker'&&!e.order)){idle.order={type:'mine',depositId:building.depositId};idle.status='mining';}
+ event(s,'notice',building.x,building.z,`${BUILDINGS[building.type]?.label||'Razor wire'} online`);
 }
 const queuedWorkers=s=>s.entities.filter(e=>live(e)&&e.production&&e.production.kind!=='mech').length;
 const workerCount=s=>s.entities.filter(e=>live(e)&&e.type==='worker').length+queuedWorkers(s);
@@ -259,13 +375,14 @@ function economyCommand(s,p,c){
  }
  if(c.type==='build'&&['generator','reactor','relay','battery','worker-factory','upgrade-station',...(s.productionVersion?['mech-factory','drop-pad']:[])].includes(c.kind)){
   if(!point(s,c))return fail('Invalid building position.');const spec=BUILDINGS[c.kind];
-  if(!s.entities.some(e=>live(e)&&!dropping(s,e)&&(e.type==='pod'||e.type==='mech')&&(p===0||e.owner===0||e.owner===p)&&dist(e,c)<=36))return fail('Build within 36m of HQ or your mech.');
+  if(!buildReach(s,p,c))return fail(reachHint(s));
   if(!teamVisible(s,c))return fail('Building position must be in team vision.');
   if(s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,c)<8)||s.deposits.some(d=>dist(d,c)<6))return fail('Keep buildings and mining deposits clear.');
   if(!servicePlacementClear(s,c.kind,c))return fail('Keep the full service-pad footprint clear.');
   if(c.kind==='drop-pad'&&s.entities.some(e=>live(e)&&(e.role==='artillery'||e.type==='drop-pad'&&!e.summonedId)))return fail('Only one artillery mech or pending drop is allowed.');
   if(s.entities.filter(e=>live(e)&&e.type===c.kind&&!(c.kind==='drop-pad'&&e.summonedId)).length>=spec.cap)return fail('Building cap reached.');
   const cost=buildingCost(s,c.kind);if(!canAfford(s,cost))return fail(`Need ${costLabel(cost)}.`);
+  if(s.playtestVersion&&c.kind!=='drop-pad')return startConstruction(s,p,c.kind,c,cost);
   spend(s,cost);s.entities.push({...unit(`${c.kind}-${s.nextId++}`,c.kind,c.x,c.z,spec.hp,c.kind==='drop-pad'?p:0),status:c.kind==='drop-pad'?'charging':'online',...(c.kind==='drop-pad'?{dropJob:{progress:0,duration:15}}:{}),...(c.kind==='battery'?{energy:0}:{})});updatePower(s);updateObjectives(s);event(s,'build',c.x,c.z,`${spec.label} deployed`);return {ok:true};
  }
  return null;
@@ -279,7 +396,7 @@ function factorySpawn(s,factory){
  return terrainPointClear(mapForState(s),fallback,1)?fallback:null;
 }
 function repairSiteFor(s,e){
- return s.entities.find(b=>live(b)&&['repair-station','pod'].includes(b.type)&&b.id===e.order?.targetId)||s.entities.filter(b=>live(b)&&b.type==='repair-station').sort((a,b)=>(s.economyVersion?Number(!a.powered)-Number(!b.powered):0)||dist(e,a)-dist(e,b))[0]||s.entities.find(b=>live(b)&&b.type==='pod');
+ return s.entities.find(b=>live(b)&&!isUnderConstruction(b)&&['repair-station','pod'].includes(b.type)&&b.id===e.order?.targetId)||s.entities.filter(b=>live(b)&&!isUnderConstruction(b)&&b.type==='repair-station').sort((a,b)=>(s.economyVersion?Number(!a.powered)-Number(!b.powered):0)||dist(e,a)-dist(e,b))[0]||s.entities.find(b=>live(b)&&b.type==='pod');
 }
 function stationOccupied(s,station){
  const occupant=s.entities.find(m=>m.id===station.serviceOccupantId&&live(m));
@@ -354,7 +471,7 @@ function travel(s,e,dest,speed,dt,stop=0){
  let aim=dest;
  if(e.type==='worker'){
   if(e.detour&&dist(e,e.detour)<0.5)delete e.detour;
-  if(!e.detour){const wire=s.entities.find(w=>w.type==='wire'&&live(w)&&segmentDistance(w,e,dest)<5&&dist(e,w)>0.1&&dist(w,dest)>1);if(wire){const dx=dest.x-e.x,dz=dest.z-e.z,l=Math.hypot(dx,dz)||1;const side=wire.x<80?1:-1;e.detour={x:Math.max(1,Math.min(worldSize(s)-1,wire.x-dz/l*9*side)),z:Math.max(1,Math.min(worldSize(s)-1,wire.z+dx/l*9*side))};}}
+  if(!e.detour){const wire=s.entities.find(w=>w.type==='wire'&&live(w)&&!isUnderConstruction(w)&&segmentDistance(w,e,dest)<5&&dist(e,w)>0.1&&dist(w,dest)>1);if(wire){const dx=dest.x-e.x,dz=dest.z-e.z,l=Math.hypot(dx,dz)||1;const side=wire.x<80?1:-1;e.detour={x:Math.max(1,Math.min(worldSize(s)-1,wire.x-dz/l*9*side)),z:Math.max(1,Math.min(worldSize(s)-1,wire.z+dx/l*9*side))};}}
   if(e.detour)aim=e.detour;
   const hq=s.entities.find(b=>live(b)&&b.type==='pod');
   if(hq&&e.detour&&dist(e.detour,hq)<9){const angle=Math.atan2(e.detour.z-hq.z,e.detour.x-hq.x);e.detour={x:hq.x+Math.cos(angle)*10,z:hq.z+Math.sin(angle)*10};aim=e.detour;}
@@ -382,8 +499,8 @@ function travel(s,e,dest,speed,dt,stop=0){
   }
  }
  const dx=aim.x-e.x,dz=aim.z-e.z,d=Math.hypot(dx,dz);if(d<=stop&&aim===dest)return true;
- let move=Math.min(speed*dt,Math.max(0,d-(aim===dest?stop:0)));
- if(e.type==='enemy'&&s.entities.some(w=>w.type==='wire'&&live(w)&&dist(e,w)<6))move*=0.3;
+ let move=Math.min(speed*movementMultiplier(s,e)*dt,Math.max(0,d-(aim===dest?stop:0)));
+ if(e.type==='enemy'&&s.entities.some(w=>w.type==='wire'&&live(w)&&!isUnderConstruction(w)&&dist(e,w)<6))move*=0.3;
  if(d){e.x+=dx/d*move;e.z+=dz/d*move;e.angle=Math.atan2(dx,dz);}return dist(e,dest)<=stop+0.1&&clearSight(s,e,dest);
 }
 function damage(s,e,amount){if(!live(e)||dropping(s,e))return;e.hp=Math.max(0,e.hp-amount);if(!live(e)){releaseService(s,e);e.status='destroyed';delete e.order;event(s,'explosion',e.x,e.z,`${e.type} destroyed`);if(e.type==='enemy'){s.kills++;s.resources+=3;}}}
@@ -419,15 +536,22 @@ function canRebuildArmy(s){
  // No army can clear defended deposits. Only presently safe deposits count.
  for(const d of s.deposits)if(!s.entities.some(e=>live(e)&&e.type==='enemy'&&dist(e,d)<32))stocks[d.resourceType||'alloy']=(stocks[d.resourceType||'alloy']||0)+d.remaining;
  const workerReserve=!s.entities.some(e=>live(e)&&e.type==='worker')&&!queuedWorkers(s)&&s.resources>=40?40:0;
- const trial=snapshot(s);trial.powerPriority='production';updatePower(trial);
+ const trial=snapshot(s);trial.powerPriority='production';
+ // Paid foundations are a recoverable route, not missing foundries. This only
+ // evaluates future affordability; actual sites still need a living builder.
+ if(s.playtestVersion)for(const e of trial.entities)if(live(e)&&e.construction&&isUnderConstruction(e))e.progress=1;
+ updatePower(trial);
  const foundries=trial.entities.filter(e=>live(e)&&e.type==='mech-factory');
  const restored=new Set(foundries.filter(e=>e.powered).map(e=>e.id));
- // Restoring a remote grid is not assumed free or remotely buildable. Test
- // deterministic legal HQ-area generator sites; workers do not grant build range.
+ // v1 rooms required HQ or a nearby owned mech, but a completed field
+ // foundry can now authorize its own replacement generator. Test legal sites,
+ // without granting free power to a genuinely stranded base.
  if(foundries.some(e=>!e.powered)&&pod){
-  for(const radius of [15,25,33])for(let i=0;i<16;i++){
-   const angle=i*Math.PI/8,p={x:pod.x+Math.sin(angle)*radius,z:pod.z+Math.cos(angle)*radius};
-   if(!point(s,p)||!teamVisible(s,p)||s.deposits.some(d=>dist(d,p)<6)||s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,p)<8)||!servicePlacementClear(s,'generator',p))continue;
+  const anchors=[pod,...(s.playtestVersion?foundries.filter(f=>!f.powered):[])];
+  for(const anchor of anchors)for(const radius of [15,25,33])for(let i=0;i<16;i++){
+   if(restored.size===foundries.length)break;
+   const angle=i*Math.PI/8,p={x:anchor.x+Math.sin(angle)*radius,z:anchor.z+Math.cos(angle)*radius};
+   if(!point(s,p)||!buildReach(trial,0,p)||!teamVisible(trial,p)||s.deposits.some(d=>dist(d,p)<6)||s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,p)<8)||!servicePlacementClear(s,'generator',p))continue;
    const copy=snapshot(trial);copy.entities.push({...unit('recovery-generator','generator',p.x,p.z,420)});updatePower(copy);
    for(const f of copy.entities.filter(e=>live(e)&&e.type==='mech-factory'&&e.powered))restored.add(f.id);
   }
@@ -472,7 +596,8 @@ function tick(s,dt){
  }
  const pod=s.entities.find(e=>e.type==='pod'&&live(e));
  updatePower(s,dt);if(s.economyVersion)advanceEconomyJobs(s,dt);
- for(const building of s.entities.filter(e=>live(e)&&e.type==='extractor'&&e.progress<1)){
+ if(s.playtestVersion)dispatchBuilders(s);
+ for(const building of s.entities.filter(e=>live(e)&&e.type==='extractor'&&!e.construction&&e.progress<1)){
   let worker=s.entities.find(e=>live(e)&&e.id===building.builderId&&e.order?.type==='construct'&&e.order.targetId===building.id);
   if(!worker){
    worker=s.entities.filter(e=>live(e)&&e.type==='worker'&&e.order?.type!=='construct').sort((a,b)=>dist(a,building)-dist(b,building))[0];
@@ -487,6 +612,7 @@ function tick(s,dt){
    const speed=e.cargo>0?RULES.carrySpeed:RULES.workerSpeed;
    if(o.type==='move'){if(travel(s,e,o,speed,dt,0.3)){delete e.order;e.status='idle';}continue;}
    if(o.type==='construct'){
+    if(s.playtestVersion&&s.entities.some(b=>b.id===o.targetId&&b.construction)){advanceConstruction(s,e,dt,speed);continue;}
     const b=s.entities.find(t=>t.id===o.targetId&&live(t)&&t.type==='extractor');
     if(!b){delete e.order;e.status='idle';continue;}
     e.status='building';
@@ -549,7 +675,7 @@ function tick(s,dt){
      else {if(station.serviceOccupantId===e.id)delete station.serviceOccupantId;delete e.order;e.status='idle';}
     }
    }else if(o?.type==='move'){if(travel(s,e,o,mechStats(e).speed,dt,0.4)){delete e.order;e.status='idle';}}
-   const range=e.type==='turret'?27:e.role==='artillery'?34:e.role==='long-range'?38:23;
+   const range=e.type==='turret'?27:s.playtestVersion?(FIELD_TUNING.range[e.role]||33):e.role==='artillery'?34:e.role==='long-range'?38:23;
    let target=o?.type==='attack'?s.entities.find(t=>t.id===o.targetId&&live(t)):null;
    if(o?.type==='attack'&&!target){delete e.order;e.status='idle';}
    if(target){

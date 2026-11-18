@@ -81,8 +81,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 16831,
-      "sha256": "617ac937f03f3c550c9ad1bd54ca45c8cb22c17c7c98c857b0584f49d4dd4645"
+      "bytes": 17646,
+      "sha256": "73bff14190910d8cb7b59386da127d6684de956b53a20bb16322033fdf5b4107"
     },
     {
       "path": "src/alien-art.js",
@@ -101,8 +101,8 @@
     },
     {
       "path": "src/client.js",
-      "bytes": 107264,
-      "sha256": "ea765e6dddd17eb0bac4e80a23cb2d47c3109f10c8b41f941684f1bf65939fa3"
+      "bytes": 112023,
+      "sha256": "18b316430dc6ecd59f30f0ee63cded45be0f1863f5059457340035df68f9e5d5"
     },
     {
       "path": "src/drop-pad-art.js",
@@ -116,13 +116,13 @@
     },
     {
       "path": "src/economy-rules.js",
-      "bytes": 6628,
-      "sha256": "47eed964fe227e1388b140bc47876db7b254dd3653ff4788d5bd928df8c0c910"
+      "bytes": 7424,
+      "sha256": "52e5eef496e8e3e051e6b7cadf894d4a70dd802d2f68d62e2a899d88ab1a0c05"
     },
     {
       "path": "src/economy-ui.js",
-      "bytes": 2627,
-      "sha256": "4f6d5da1e1e8f948e041ed92b14a5f718e0d4762c0b6017dd3d426669b39178e"
+      "bytes": 3464,
+      "sha256": "17a982a17e353669df60a131befa6bebaa338ee7dadfcbaed2c0c4c6d63863c2"
     },
     {
       "path": "src/frontier-map.js",
@@ -131,8 +131,8 @@
     },
     {
       "path": "src/gamepad.js",
-      "bytes": 4660,
-      "sha256": "88105c4fd975734891334c173bc31969a11ffd409a38b6b6b80909bfc3542c70"
+      "bytes": 5449,
+      "sha256": "e97eedfb7069c2a9a86d3c274e190c32f5815ceeb0ff7619f60103d6832e7fd3"
     },
     {
       "path": "src/gatling-audio.js",
@@ -161,8 +161,8 @@
     },
     {
       "path": "src/mission-ui.js",
-      "bytes": 4616,
-      "sha256": "7b8cc1e42f6296d88669dbe98695d9c2d90696fcfd2556de6c35e4129a8990b6"
+      "bytes": 5024,
+      "sha256": "7348b09692cc85b1438831523060c5a1003f80ee9cdadae632b999bd812e6285"
     },
     {
       "path": "src/motion.js",
@@ -176,8 +176,8 @@
     },
     {
       "path": "src/room-transport.js",
-      "bytes": 2732,
-      "sha256": "38caafcaba0813a7d315dc2593bb7eeb3d4078f3f2c047aabcad8950645565c0"
+      "bytes": 2808,
+      "sha256": "9e72eba7b69e04df108e2255f635f9f0f145d73247cd4cadc9e1034fd41965ba"
     },
     {
       "path": "src/runtime-config.js",
@@ -186,8 +186,8 @@
     },
     {
       "path": "src/selection-controls.js",
-      "bytes": 1361,
-      "sha256": "4af97d848815c43cd82d43fbb2768f159f4d0cf2a640a2d0c8a98947e0d6e11a"
+      "bytes": 2633,
+      "sha256": "7ecb73e58f95b34633be15e42bf9c262bea110be2d64b2ed4bba2bf6a89f028d"
     },
     {
       "path": "src/service-bay.js",
@@ -196,13 +196,13 @@
     },
     {
       "path": "src/simulation.js",
-      "bytes": 51411,
-      "sha256": "ff10fafdd183830abd08a50c8bdc09878c756266d2c66c5ac09b8559f70c81db"
+      "bytes": 61531,
+      "sha256": "6b13f6005d01225500b95fa1666bce20062cfbf7b38351a3868adc7243791441"
     },
     {
       "path": "src/style.css",
-      "bytes": 24981,
-      "sha256": "7f7b9c8c32bf4401e9feddb96776b027313d74970e22ede93c027682207e31fe"
+      "bytes": 25327,
+      "sha256": "01063bb74f2189649669d8dbae3738d91c708e385199e376417f044c87d5bf13"
     },
     {
       "path": "src/supply-landing.js",
@@ -216,8 +216,8 @@
     },
     {
       "path": "src/weapons.js",
-      "bytes": 2441,
-      "sha256": "17cd5699929c4dd0c45263fa746320668036c9188ab5487b9c7ad40a1f7dde4b"
+      "bytes": 2460,
+      "sha256": "c264b029e33e0c022cec65fada3da45e8f4a3b2613fcc503afb9a88e891e6238"
     },
     {
       "path": "src/world-scale.js",

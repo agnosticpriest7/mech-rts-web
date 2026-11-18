@@ -39,6 +39,25 @@ export function createMenuDirectionReader(){
   return null;
  };
 }
+// Keep the old bumper tap-to-cycle shortcut without letting a hold change the
+// selection before its action menu opens. A menu/disconnect cancels the gesture.
+export function createShoulderGestureReader({holdMs=250}={}){
+ let gesture=null;
+ return (input,now)=>{
+  if(!input){gesture=null;return null;}
+  if(gesture){
+   if(!input.held.has(gesture.button)){
+    const result=gesture.opened?null:{type:'cycle',delta:gesture.button==='lb'?-1:1};
+    gesture=null;return result;
+   }
+   if(!gesture.opened&&now-gesture.at>=holdMs){gesture.opened=true;return {type:'actions',button:gesture.button};}
+   return {type:'pending'};
+  }
+  const button=['lb','rb'].find(key=>input.pressed.has(key));
+  if(button){gesture={button,at:now,opened:false};return {type:'pending'};}
+  return null;
+ };
+}
 export function wrapIndex(index,delta,length){return length?((index+delta)%length+length)%length:0;}
 export function controllerProfile(userAgent=''){return /Xbox/i.test(userAgent)?{console:true,mech:'m06-lod1.glb',pod:'anchor-lod1.glb'}:{console:false,mech:'m06-runtime.glb',pod:'anchor-runtime.glb'};}
 

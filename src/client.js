@@ -1,7 +1,7 @@
-import { HttpRoomSocket as WebSocket } from './room-transport.js';
+import { HttpRoomSocket as WebSocket } from './room-transport.js?v=field-playtest-1';
 import { FRONTIER_MAP } from './frontier-map.js';
 import { createBasinTerrain } from './basin-terrain.js';
-import { contextualOrder, selectionActions } from './selection-controls.js';
+import { contextualOrder, selectionActions, cyclePlayableUnit, similarUnitIds } from './selection-controls.js?v=field-playtest-1';
 
 import * as THREE from 'three';
 
@@ -13,7 +13,7 @@ import { INTRO_DURATION, LANDING_IMPACTS, sampleLanding, createLandingScene } fr
 
 import { createMechLandingRig, sampleMechLanding } from './mech-landing.js';
 
-import { BUILDINGS, UPGRADES, PRODUCTION_RULES, buildingCost, mechStats } from './economy-rules.js';
+import { BUILDINGS, UPGRADES, PRODUCTION_RULES, buildingCost, mechStats } from './economy-rules.js?v=field-playtest-1';
 
 import { createAlienRig, ALIEN_ASSETS } from './alien-art.js';
 
@@ -33,20 +33,20 @@ import { structureTerrainZones, terrainIntersectsZones } from './terrain-clearan
 
 import { WORLD_SCALE, TACTICAL_CAMERA, sampleTacticalCamera, cameraDampingAlpha } from './world-scale.js';
 
-import { RESOURCE_COLORS, resourceKind, resourceBalance, formatCost, affordable, shortResource, buildingLabel, coverageStatus, displayAmount } from './economy-ui.js';
+import { RESOURCE_COLORS, resourceKind, resourceBalance, formatCost, affordable, shortResource, buildingLabel, coverageStatus, displayAmount, constructionNote, constructionStatus } from './economy-ui.js?v=field-playtest-1';
 
-import { createGame, teamVisible, servicePlacementClear } from './simulation.js';
+import { createGame, teamVisible, sensorRadius, buildReach, movementMultiplier, servicePlacementClear } from './simulation.js?v=field-playtest-1';
 
-import { workerClip, objectiveTarget, objectiveHint } from './mission-ui.js';
+import { workerClip, objectiveTarget, objectiveHint } from './mission-ui.js?v=field-playtest-1';
 
 import { SnapshotTimeline, SnapshotTrack, LocomotionBlend, dampAngle } from './motion.js';
 
 import { GatlingAudio } from './gatling-audio.js';
 import { MusicPlayer } from './music-player.js?v=menu-2';
 
-import { GatlingShots, GatlingRotors, authoritativeSide, rotorBlurOpacity } from './weapons.js';
+import { GatlingShots, GatlingRotors, authoritativeSide, rotorBlurOpacity } from './weapons.js?v=field-playtest-1';
 
-import { createGamepadReader, createMenuDirectionReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js?v=menu-2';
+import { createGamepadReader, createMenuDirectionReader, createShoulderGestureReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js?v=field-playtest-1';
 
 const graphicsProfile=controllerProfile(navigator.userAgent);
 
@@ -156,6 +156,7 @@ const fogPlane=mesh(new THREE.PlaneGeometry(160,160),new THREE.MeshBasicMaterial
 const alienAssets={};
 
 let state=null,room=null,playerId=0,socket,token=null,artilleryAsset=null,modelAsset=null,podAsset=null,workerAsset=null,extractorAsset=null,turretAsset=null,selected=new Set(),placement=null,lastEvent=0,lastTime=0,gameStarted=false,connected=false;
+let lastUnitActivation=null;
 
 const presentation=new SnapshotTimeline(WebSocket.snapshotInterval||.05);let newSession=false;
 
@@ -235,7 +236,7 @@ function visionAt(x,z){return !!state&&teamVisible(state,{x,z});}
 
 function send(type,extra={}){if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type,...extra}));else toast('Connection is not ready.');}
 
-function command(cmd){if(introActive())return;if(room?.paused){toast('Mission paused. The host can resume.');return;}if(cmd.ids){const ids=cmd.ids.filter(id=>!state?.entities.find(e=>e.id===id)?.launch);if(!ids.length){toast('Mech rollout in progress. Orders unlock when it clears the foundry.');return;}cmd={...cmd,ids};}if(['mech','cancel-production'].includes(cmd.type)&&state?.entities.find(e=>e.id===cmd.factoryId)?.launchId){toast('Foundry is launching its completed mech. Keep the apron clear.');return;}send('command',{command:cmd});}
+function command(cmd){lastUnitActivation=null;if(introActive())return;if(room?.paused){toast('Mission paused. The host can resume.');return;}if(cmd.ids){const ids=cmd.ids.filter(id=>!state?.entities.find(e=>e.id===id)?.launch);if(!ids.length){toast('Mech rollout in progress. Orders unlock when it clears the foundry.');return;}cmd={...cmd,ids};}if(['mech','cancel-production'].includes(cmd.type)&&state?.entities.find(e=>e.id===cmd.factoryId)?.launchId){toast('Foundry is launching its completed mech. Keep the apron clear.');return;}send('command',{command:cmd});}
 
 function connect(action){
 
@@ -493,11 +494,11 @@ function reconcile(){if(!state)return;clearStructureTerrain();
 
 }
 
-function updateFog(){if(!state)return;const scale=256/mapSize();exploredCtx.fillStyle='white';for(const e of state.entities){if(e.hp<=0||!['pod','mech','worker','turret'].includes(e.type))continue;const r=e.type==='pod'?34:e.type==='worker'?18:28;exploredCtx.beginPath();exploredCtx.arc(e.x*scale,e.z*scale,r*scale,0,Math.PI*2);exploredCtx.fill();}
+function updateFog(){if(!state)return;const scale=256/mapSize();exploredCtx.fillStyle='white';for(const e of state.entities){const r=sensorRadius(state,e);if(!r)continue;exploredCtx.beginPath();exploredCtx.arc(e.x*scale,e.z*scale,r*scale,0,Math.PI*2);exploredCtx.fill();}
 
  fogCtx.globalCompositeOperation='source-over';fogCtx.clearRect(0,0,256,256);fogCtx.fillStyle='rgba(5,14,19,.94)';fogCtx.fillRect(0,0,256,256);fogCtx.globalCompositeOperation='destination-out';fogCtx.globalAlpha=.36;fogCtx.drawImage(exploredCanvas,0,0);fogCtx.globalAlpha=1;
 
- for(const e of state.entities){if(e.hp<=0||!['pod','mech','worker','turret'].includes(e.type))continue;const r=(e.type==='pod'?34:e.type==='worker'?18:28)*scale;const grad=fogCtx.createRadialGradient(e.x*scale,e.z*scale,r*.8,e.x*scale,e.z*scale,r);grad.addColorStop(0,'rgba(0,0,0,1)');grad.addColorStop(1,'rgba(0,0,0,0)');fogCtx.fillStyle=grad;fogCtx.beginPath();fogCtx.arc(e.x*scale,e.z*scale,r,0,Math.PI*2);fogCtx.fill();}fogCtx.globalCompositeOperation='source-over';fogTexture.needsUpdate=true;fogPlane.visible=gameStarted;}
+ for(const e of state.entities){const r=sensorRadius(state,e)*scale;if(!r)continue;const grad=fogCtx.createRadialGradient(e.x*scale,e.z*scale,r*.8,e.x*scale,e.z*scale,r);grad.addColorStop(0,'rgba(0,0,0,1)');grad.addColorStop(1,'rgba(0,0,0,0)');fogCtx.fillStyle=grad;fogCtx.beginPath();fogCtx.arc(e.x*scale,e.z*scale,r,0,Math.PI*2);fogCtx.fill();}fogCtx.globalCompositeOperation='source-over';fogTexture.needsUpdate=true;fogPlane.visible=gameStarted;}
 
 function clearEffects(){gatlingAudio?.stopAll({immediate:true});pendingEffects.length=0;gatlingShots.clear();for(const fx of effects){scene.remove(fx.object);fx.object.geometry?.dispose();fx.object.material?.dispose();}effects.length=0;}
 
@@ -569,11 +570,11 @@ function updateHUD(){if(!state)return;$('resources').textContent=displayAmount(s
 
  const units=state.entities.filter(e=>selected.has(e.id)&&e.hp>0);if(units.length===1){const e=units[0];$('selected-name').textContent=e.type==='mech'?`${e.role==='artillery'?'V5 / ORBITAL ARTILLERY':e.role==='combat'?'M06 / VANGUARD':'M06 / LANCER'}`:buildingLabel(e.type).toUpperCase();$('selected-info').textContent=`${Math.ceil(e.hp)} / ${e.maxHp} HP · ${e.status.toUpperCase()}${e.type==='worker'?` · ${displayAmount(e.cargo)} ${shortResource(e.cargoType).toUpperCase()} CARRIED`:e.powerDemand!==undefined?` · ${e.powered?'POWERED':e.powerConnected?'NO SUPPLY':'OUT OF GRID'}`:e.upgradeJob?` · REFIT ${Math.floor(e.upgradeJob.progress*100)}%`:''}`;}else{$('selected-name').textContent=units.length?`${units.length} UNITS SELECTED`:'Select a unit';$('selected-info').textContent=units.length?'Workers haul typed resources back to HQ.':'Left click to select. Right click to give an order.';}
 
- if(units.length===1&&units[0].production)$('selected-info').textContent+=' · '+productionText(units[0]);if(units.length===1&&units[0].type==='relay')$('selected-info').textContent+=' · 30m POWER RADIUS';$('repair').disabled=!units.some(e=>e.type==='mech'&&!e.launch);renderEconomy();renderSelectionActions();drawMinimap();
+ if(units.length===1&&units[0].production)$('selected-info').textContent+=' · '+productionText(units[0]);if(units.length===1&&units[0].type==='relay')$('selected-info').textContent+=' · 30m POWER RADIUS';if(units.length===1&&units[0].construction&&units[0].progress<1)$('selected-info').textContent=constructionStatus(units[0]);$('selected-info').title=$('selected-info').textContent;$('repair').disabled=!units.some(e=>e.type==='mech'&&!e.launch);renderEconomy();renderSelectionActions();drawMinimap();
 
 }
 
-function selectIds(ids,add=false){if(!add)selected.clear();for(const id of ids){const e=state?.entities.find(e=>e.id===id);if(e?.hp>0&&controlled(e)&&e.owner!==-1)selected.add(id);}updateHUD();}
+function selectIds(ids,add=false){lastUnitActivation=null;if(!add)selected.clear();for(const id of ids){const e=state?.entities.find(e=>e.id===id);if(e?.hp>0&&controlled(e)&&e.owner!==-1)selected.add(id);}updateHUD();}
 
 const overlay=$('overlay'),ctx=overlay.getContext('2d'),minimap=$('minimap'),mini=minimap.getContext('2d');
 
@@ -587,7 +588,7 @@ function drawOverlay(){ctx.clearRect(0,0,innerWidth,innerHeight);if(!state||!gam
  function claimLabel(p,width,height=26){if(p.z>1||p.x<width/2+8||p.x>innerWidth-width/2-8||p.y<110||p.y>innerHeight-174)return false;const r={x:p.x-width/2,y:p.y-height,w:width,h:height+8};if(labelRects.some(a=>r.x<a.x+a.w&&r.x+r.w>a.x&&r.y<a.y+a.h&&r.y+r.h>a.y))return false;labelRects.push(r);return true;}
  // Selected objects have first claim; healthy incidental objects need no HUD label.
  const annotated=[...state.entities].sort((a,b)=>Number(selected.has(b.id))-Number(selected.has(a.id)));
- for(const e of annotated){if(e.hp<=0||!entities.get(e.id)?.visible||e.type==='wire')continue;const focused=selected.has(e.id)||hovered?.id===e.id;if(!focused&&e.hp>=e.maxHp)continue;const v=entities.get(e.id).position,p=project(v.x,{mech:13.3,pod:13,hive:14,worker:3.5,turret:6,extractor:10,'repair-station':10.5,'upgrade-station':15,'worker-factory':5.2,'mech-factory':19,enemy:3.5}[e.type]||8,v.z);if(!claimLabel(p,focused?140:56))continue;const w=focused?54:30;ctx.fillStyle='#071416da';ctx.fillRect(p.x-w/2-1,p.y-1,w+2,5);ctx.fillStyle=e.owner===-1?'#db7960':selected.has(e.id)?'#ffd38b':'#8dc8b1';ctx.fillRect(p.x-w/2,p.y,w*Math.max(0,e.hp/e.maxHp),3);if(focused){ctx.font='11px sans-serif';ctx.textAlign='center';ctx.fillStyle='#e3eee7';ctx.fillText(e.type==='mech'?(e.role==='artillery'?'ARTILLERY':e.role==='combat'?'VANGUARD':'LANCER'):e.type==='pod'?'ANCHOR HQ':e.type==='hive'?'HIVE':buildingLabel(e.type).toUpperCase(),p.x,p.y-7);}}
+ for(const e of annotated){if(e.hp<=0||!entities.get(e.id)?.visible||e.type==='wire')continue;const focused=selected.has(e.id)||hovered?.id===e.id,site=!!e.construction&&e.progress<1;if(!focused&&!site&&e.hp>=e.maxHp)continue;const v=entities.get(e.id).position,p=project(v.x,{mech:13.3,pod:13,hive:14,worker:3.5,turret:6,extractor:10,'repair-station':10.5,'upgrade-station':15,'worker-factory':5.2,'mech-factory':19,enemy:3.5}[e.type]||8,v.z);if(!claimLabel(p,focused?140:56))continue;const w=focused?54:30;ctx.fillStyle='#071416da';ctx.fillRect(p.x-w/2-1,p.y-1,w+2,5);ctx.fillStyle=e.owner===-1?'#db7960':selected.has(e.id)?'#ffd38b':'#8dc8b1';if(site)ctx.fillStyle='#edb36b';ctx.fillRect(p.x-w/2,p.y,w*Math.max(0,site?e.progress:e.hp/e.maxHp),3);if(site){ctx.font='11px sans-serif';ctx.textAlign='center';ctx.fillStyle='#ffdba3';ctx.fillText((e.builderId?'BUILD ':'NEEDS CREW ')+Math.floor(e.progress*100)+'%',p.x,p.y-7);}else if(focused){ctx.font='11px sans-serif';ctx.textAlign='center';ctx.fillStyle='#e3eee7';ctx.fillText(e.type==='mech'?(e.role==='artillery'?'ARTILLERY':e.role==='combat'?'VANGUARD':'LANCER'):e.type==='pod'?'ANCHOR HQ':e.type==='hive'?'HIVE':buildingLabel(e.type).toUpperCase(),p.x,p.y-7);}}
  for(const d of state.deposits){if(!visionAt(d.x,d.z)||d.remaining<=0)continue;const near=Math.hypot(d.x-aimPoint.x,d.z-aimPoint.z)<8,rig=state.entities.find(e=>e.type==='extractor'&&e.depositId===d.id&&e.hp>0);if(!near&&placement!=='extractor'&&!selected.has(rig?.id))continue;const p=project(d.x,6,d.z);if(!claimLabel(p,140))continue;ctx.font='11px sans-serif';ctx.fillStyle='#'+(RESOURCE_COLORS[resourceKind(d)]||RESOURCE_COLORS.alloy).toString(16);ctx.textAlign='center';ctx.fillText(rig?`EXTRACTOR ${rig.progress<1?Math.round(rig.progress*100)+'%':rig.powered===false?'NO POWER':'ONLINE'}`:`${shortResource(resourceKind(d)).toUpperCase()} ${displayAmount(d.remaining)}`,p.x,p.y);}
  if(placement){const p=project(aimPoint.x,1,aimPoint.z);ctx.font='10px monospace';ctx.fillStyle='#ffce86';ctx.textAlign='center';ctx.fillText(placement==='hvd'?'HVD TARGET / LEFT CLICK':`PLACE ${placement.toUpperCase()} / ${controllerActive?'A':'LEFT CLICK'}`,p.x,p.y-25);}
 
@@ -598,6 +599,7 @@ function drawMinimap(){
  if(size===768){for(const b of FRONTIER_MAP.obstacles){mini.fillStyle=b.type==='water'?'#244b53':'#51574c';mini.fillRect((b.x-b.width/2)*sx,(b.z-b.depth/2)*sz,b.width*sx,b.depth*sz);}mini.strokeStyle='#ad96784d';for(const l of FRONTIER_MAP.lanes){mini.beginPath();l.points.forEach((p,i)=>i?mini.lineTo(p.x*sx,p.z*sz):mini.moveTo(p.x*sx,p.z*sz));mini.stroke();}}
  mini.strokeStyle='#3b514b66';mini.lineWidth=.5;for(let i=0;i<9;i++){mini.beginPath();mini.moveTo(i*190/8,0);mini.lineTo(i*190/8,160);mini.stroke();mini.beginPath();mini.moveTo(0,i*20);mini.lineTo(190,i*20);mini.stroke();}
  for(const d of state.deposits){mini.fillStyle='#'+(RESOURCE_COLORS[resourceKind(d)]||RESOURCE_COLORS.alloy).toString(16);mini.fillRect(d.x*sx-2,d.z*sz-2,4,4);}
+ if(state.playtestVersion)mini.drawImage(fogCanvas,0,0,190,160);
  for(const e of state.entities){if(e.hp<=0||(e.owner===-1&&!visionAt(e.x,e.z)))continue;mini.fillStyle=e.owner===-1?'#df795d':e.type==='mech'?e.owner===1?'#ffca7c':'#9bdfcf':'#6eaf99';mini.beginPath();mini.arc(e.x*sx,e.z*sz,e.type==='pod'?4:e.type==='hive'?6:e.type==='mech'?3:1.5,0,Math.PI*2);mini.fill();}
  const contact=size===768?{...FRONTIER_MAP.hive,label:'HIVE'}:state.mission?{x:70,z:80,label:'APPROACH'}:{x:132,z:30,label:'HIVE'};mini.strokeStyle='#de9162';mini.beginPath();mini.arc(contact.x*sx,contact.z*sz,7,0,Math.PI*2);mini.stroke();mini.fillStyle='#d0dfd0';mini.font='7px monospace';mini.fillText(contact.label,contact.x*sx+8,contact.z*sz+2);mini.strokeStyle='#f1d3a299';mini.strokeRect((focus.x-zoom*.4)*sx,(focus.z-zoom*.34)*sz,zoom*.8*sx,zoom*.68*sz);
 }
@@ -618,13 +620,21 @@ function issueContext(target,p){const result=contextualOrder(selectedUnits(),tar
 
 function orderAt(event){if(!gameStarted||introActive())return;const p=pointerGround(event);if(!issueContext(pickEntity(event),p))toast('Select a mech or worker first.');}
 
-function primaryAt(target,p,inspect=false){if(!inspect&&selectedUnits().length&&(!target||!['mech','worker'].includes(target.type))&&issueContext(target,p))return;if(target)selectIds([target.id]);else selectIds([]);}
+function primaryAt(target,p,inspect=false,source=null){
+ if(!inspect&&selectedUnits().length&&(!target||!['mech','worker'].includes(target.type))){lastUnitActivation=null;if(issueContext(target,p))return;}
+ const similar=source&&!inspect?similarUnitIds(state.entities,target,playerId):[];
+ if(similar.length){
+  const now=performance.now(),double=lastUnitActivation?.id===target.id&&lastUnitActivation.source===source&&now-lastUnitActivation.at<=400;
+  selectIds(double?similar:[target.id]);
+  if(!double)lastUnitActivation={id:target.id,source,at:now};
+ }else selectIds(target?[target.id]:[]);
+}
 
 function addMoveMarker(x,z){const o=ring(2,0xffd395);o.position.set(x,.3,z);scene.add(o);effects.push({object:o,ttl:.8,max:.8});}
 
 const ghost=ring(3,0xffbf69);scene.add(ghost);ghost.visible=false;const placementFootprint=new THREE.Line(new THREE.BufferGeometry().setFromPoints([[-8,0,-7],[8,0,-7],[8,0,7],[-8,0,7],[-8,0,-7]].map(p=>new THREE.Vector3(...p))),new THREE.LineBasicMaterial({color:0xffbf69}));scene.add(placementFootprint);placementFootprint.visible=false;const launchPreview=new THREE.Line(new THREE.BufferGeometry().setFromPoints([[-7,0,0],[-7,0,26.5],[7,0,26.5],[7,0,0]].map(p=>new THREE.Vector3(...p))),new THREE.LineBasicMaterial({color:0x9bdfb9}));scene.add(launchPreview);launchPreview.visible=false;const launchMarker=ring(2,0x9bdfb9,.6);scene.add(launchMarker);launchMarker.visible=false;const powerPreview=ring(1,0x9bdfb9,.28);scene.add(powerPreview);powerPreview.name='Selected power radius';powerPreview.visible=false;
 
-function setPlacement(kind){if(kind==='wire'&&state?.mission)return;placement=kind;document.querySelectorAll('[data-build]').forEach(b=>b.classList.toggle('active',b.dataset.build===kind));$('hvd').classList.toggle('active',kind==='hvd');$('action-hint').textContent=kind?`${kind==='hvd'?'Target within 65m of your mech':kind==='extractor'?'Place on any mineral deposit; a worker assembles it':'Place within sight and 36m of HQ or your mech'}. ${controllerActive?'A confirms; B cancels':'Click confirms; ESC cancels'}.`:'Right click a deposit to mine. Right click an enemy to attack.';ghost.visible=!!kind;placementFootprint.visible=false;powerPreview.visible=false;ghost.scale.setScalar(kind==='hvd'?4:kind==='wire'?1.5:['repair-station','upgrade-station'].includes(kind)?3.6:1);}
+function setPlacement(kind){if(kind==='wire'&&state?.mission)return;placement=kind;document.querySelectorAll('[data-build]').forEach(b=>b.classList.toggle('active',b.dataset.build===kind));$('hvd').classList.toggle('active',kind==='hvd');$('action-hint').textContent=kind?`${kind==='hvd'?'Target within 65m of your mech':kind==='extractor'?'Place on any mineral deposit; a worker assembles it':state?.playtestVersion?'Place near HQ (64m), your mech (48m), or a completed building (26m)':'Place within sight and 36m of HQ or your mech'}. ${controllerActive?'A confirms; B cancels':'Click confirms; ESC cancels'}.`:'Right click a deposit to mine. Right click an enemy to attack.';ghost.visible=!!kind;placementFootprint.visible=false;powerPreview.visible=false;ghost.scale.setScalar(kind==='hvd'?4:kind==='wire'?1.5:['repair-station','upgrade-station'].includes(kind)?3.6:1);}
 
 renderer.domElement.addEventListener('pointerdown',e=>{if(introActive()||!$('economy-modal').hidden)return;pointerDown={x:e.clientX,y:e.clientY,button:e.button};dragging=false;});
 
@@ -636,7 +646,7 @@ renderer.domElement.addEventListener('pointerup',e=>{if(introActive()||!$('econo
 
  if(cursorOrderMode){orderAt(e);return;}
 
- const entity=pickEntity(e);if(e.shiftKey&&entity)selectIds([entity.id],true);else primaryAt(entity,pointerGround(e),e.altKey);
+ const entity=pickEntity(e);if(e.shiftKey&&entity)selectIds([entity.id],true);else primaryAt(entity,pointerGround(e),e.altKey,'pointer');
 
 });
 
@@ -662,9 +672,10 @@ $('solo').onclick=()=>connect({type:'create',mode:'solo',map:$('map-choice').val
 
 // Controller UI is separate from world input. A held button never repeats purchases.
 
-const readGamepad=createGamepadReader(),readMenuDirection=createMenuDirectionReader(),lastMenuFocus=new WeakMap();
+const readGamepad=createGamepadReader(),readMenuDirection=createMenuDirectionReader(),readShoulderGesture=createShoulderGestureReader(),lastMenuFocus=new WeakMap();
 let lastMenu=null,optionEdit=null;
 let controllerActive=false,controllerUI=false,padWasConnected=false,rawInputEnabled=true,rawInputArmed=true;
+let controllerShoulder=null;
 
 $('music').onclick=()=>{musicPlayer.unlock();$('help-modal').hidden=false;$('music-retry').focus();};
 $('music-toggle').onclick=()=>{musicPlayer.setEnabled(!musicPlayer.enabled);musicPlayer.unlock();};
@@ -679,7 +690,14 @@ function visibleControls(root){return [...root.querySelectorAll('button,input,se
 
 function focusControl(el){document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));if(el){el.classList.add('pad-focus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});}}
 
-function closeControllerUI(){finishOptionEdit(false);controllerUI=false;document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));document.activeElement?.blur();}
+function closeControllerUI(){finishOptionEdit(false);controllerUI=false;controllerShoulder=null;readShoulderGesture(null);lastUnitActivation=null;document.body.classList.remove('controller-actions-open');document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));document.activeElement?.blur();if(state)renderControlHint();}
+
+function openControllerActions(shoulder=null){
+ if(!gameStarted||introActive())return;
+ renderSelectionActions();const first=visibleControls($('selection-actions'))[0];if(!first)return;
+ controllerUI=true;controllerShoulder=shoulder;lastUnitActivation=null;keys.clear();readShoulderGesture(null);
+ document.body.classList.add('controller-actions-open');focusControl(first);renderControlHint();
+}
 
 // Never send a synthetic click to a native popup: console browsers can put
 // their own picker above the game. The real select becomes an inline list.
@@ -745,7 +763,7 @@ $('code-delete').onclick=()=>{$('room-code').value=$('room-code').value.slice(0,
 
 $('code-done').onclick=()=>{$('code-keyboard').hidden=true;focusControl($('join'));};
 
-function cycleUnit(delta){const units=state.entities.filter(e=>e.hp>0&&controlled(e)&&['mech','worker'].includes(e.type));const current=units.findIndex(e=>selected.has(e.id));const unit=units[wrapIndex(current,delta,units.length)];if(unit){selectIds([unit.id]);aimPoint.set(unit.x,0,unit.z);focus.copy(aimPoint);}}
+function cycleUnit(delta){const unit=cyclePlayableUnit(state.entities,selected,delta,playerId);if(unit){selectIds([unit.id]);aimPoint.set(unit.x,0,unit.z);focus.copy(aimPoint);}}
 
 function controllerTarget(){let best=null,distance=Infinity;for(const e of state.entities){if(e.hp<=0||!entities.get(e.id)?.visible)continue;const v=entities.get(e.id).position,d=Math.hypot(v.x-aimPoint.x,v.z-aimPoint.z),radius=e.type==='pod'?10:e.type==='hive'?13:5;if(d<radius&&d<distance){best=e;distance=d;}}return best;}
 
@@ -807,8 +825,8 @@ function updateController(dt){
 
  const direction=readMenuDirection(input,performance.now());
  const neutral=input&&!input.held.size&&!input.lx&&!input.ly&&!input.rx&&!input.ry&&!input.zoom;
- if(input&&!rawInputArmed){lastMenu=controllerMenu();if(neutral)rawInputArmed=true;return;}
- if(!input){if(padWasConnected){controllerActive=false;closeControllerUI();}padWasConnected=false;lastMenu=null;return;}
+ if(input&&!rawInputArmed){readShoulderGesture(null);lastUnitActivation=null;lastMenu=controllerMenu();if(neutral)rawInputArmed=true;return;}
+ if(!input){if(padWasConnected){controllerActive=false;rawInputArmed=false;closeControllerUI();}padWasConnected=false;lastMenu=null;return;}
  padWasConnected=true;
  if(!controllerActive&&neutral)return;
  controllerActive=true;
@@ -820,7 +838,15 @@ function updateController(dt){
   if(!neutral){rawInputArmed=false;return;}
  }
  lastMenu=menu;
+ if(menu){readShoulderGesture(null);lastUnitActivation=null;}
+ // A shoulder hold is a temporary contextual menu. Choosing a nested page
+ // keeps that page open, but merely releasing the shoulder never selects it.
+ if(menu===$('selection-actions')&&controllerShoulder&&!input.held.has(controllerShoulder)){
+  closeControllerUI();if(!neutral)rawInputArmed=false;return;
+ }
  const {el,wasFocused}=menu?ensureMenuFocus(menu):{};
+ if(['view','b','menu','y'].some(key=>p.has(key))){readShoulderGesture(null);lastUnitActivation=null;}
+ renderControlHint();
  if(p.has('view')){
   finishOptionEdit(false);
   const help=$('help-modal');
@@ -837,7 +863,7 @@ function updateController(dt){
    if(controllerMenu())ensureMenuFocus(controllerMenu());else closeControllerUI();
   }else if(menu===$('code-keyboard')){
    menu.hidden=true;focusControl($('room-code'));
-  }else if(menu===$('economy-modal'))closeEconomy();
+  }else if(menu===$('economy-modal'))closeEconomy(true);
   else if(menu===$('landing-intro'))skipIntro();
   else if(menu===$('lobby')){if(!$('ready-panel').hidden)$('leave-lobby').click();}
   else if(menu===$('selection-actions'))closeControllerUI();
@@ -848,7 +874,7 @@ function updateController(dt){
  if(p.has('y')&&(!menu||menu===$('economy-modal')||menu===$('selection-actions'))){
   if(menu===$('economy-modal'))closeEconomy();
   else if(controllerUI)closeControllerUI();
-  else if(gameStarted){const first=visibleControls($('selection-actions'))[0];if(first){controllerUI=true;focusControl(first);}}
+  else if(gameStarted)openControllerActions();
   return;
  }
  if(menu){
@@ -884,23 +910,29 @@ function updateController(dt){
 
  if(!gameStarted)return;
 
+ const shoulder=readShoulderGesture(input,performance.now());
+ if(shoulder){
+  if(shoulder.type==='actions')openControllerActions(shoulder.button);
+  else if(shoulder.type==='cycle')cycleUnit(shoulder.delta);
+  return;
+ }
+
+ const cycle=['left','up','right','down'].find(key=>p.has(key));
+ if(cycle){cycleUnit(['left','up'].includes(cycle)?-1:1);return;}
+
  const speed=zoom*.48*dt;aimPoint.x=THREE.MathUtils.clamp(aimPoint.x+(input.lx*.85+input.ly*.65)*speed,0,mapSize());aimPoint.z=THREE.MathUtils.clamp(aimPoint.z+(-input.lx*.65+input.ly*.85)*speed,0,mapSize());
 
  focus.x+=(input.rx*.85+input.ry*.65)*speed;focus.z+=(-input.rx*.65+input.ry*.85)*speed;zoom=THREE.MathUtils.clamp(zoom+input.zoom*50*dt,TACTICAL_CAMERA.minZoom,TACTICAL_CAMERA.maxZoom);
 
  ghost.position.set(aimPoint.x,.2,aimPoint.z);
 
- if(p.has('lb'))cycleUnit(-1);if(p.has('rb'))cycleUnit(1);
-
- if(p.has('left'))selectIds(['mech-1']);if(p.has('right'))selectIds(['mech-2']);if(p.has('up'))selectWorkers();if(p.has('down')){focus.set(30,0,120);aimPoint.copy(focus);selectIds(['pod']);}
-
- if(p.has('a')){if(placement){command(placement==='hvd'?{type:'hvd',x:aimPoint.x,z:aimPoint.z}:{type:'build',kind:placement,x:aimPoint.x,z:aimPoint.z});setPlacement(null);}else{primaryAt(controllerTarget(),aimPoint);}}
+ if(p.has('a')){if(placement){lastUnitActivation=null;command(placement==='hvd'?{type:'hvd',x:aimPoint.x,z:aimPoint.z}:{type:'build',kind:placement,x:aimPoint.x,z:aimPoint.z});setPlacement(null);}else{primaryAt(controllerTarget(),aimPoint,false,'pad');}}
 
  if(p.has('x')&&!placement)primaryAt(controllerTarget(),aimPoint,true);
 
 }
 
-let economyTab='build',structureSignature='',mechSignature='',factorySignature='';
+let economyTab='build',structureSignature='',mechSignature='',factorySignature='',economyActionsBack=false;
 
 let chosenMechFactory=null;
 
@@ -918,11 +950,11 @@ function economySelectedMech(){return state?.entities.find(e=>e.hp>0&&e.type==='
 
 function economyFactory(){const factories=state?.entities.filter(e=>e.hp>0&&e.type==='worker-factory')||[];return factories.find(e=>selected.has(e.id))||factories.find(e=>e.powered&&!e.production)||factories.find(e=>e.powered)||factories[0]||null;}
 
-function closeEconomy(){ $('economy-modal').hidden=true;closeControllerUI();keys.clear(); }
+function closeEconomy(back=false){ const returnToActions=back===true&&economyActionsBack;economyActionsBack=false;$('economy-modal').hidden=true;closeControllerUI();keys.clear();if(returnToActions)openControllerActions(); }
 
 function switchEconomyTab(tab){economyTab=tab;for(const name of ['build','upgrades','power']){$('economy-'+name).hidden=name!==tab;$('economy-tab-'+name).setAttribute('aria-selected',String(name===tab));}renderEconomy();}
 
-function openEconomy(tab=economyTab){if(!gameStarted||introActive())return;setPlacement(null);keys.clear();controllerUI=false;$('economy-modal').hidden=false;switchEconomyTab(tab);focusControl($('economy-tab-'+tab));}
+function openEconomy(tab=economyTab){if(!gameStarted||introActive())return;economyActionsBack=controllerUI;setPlacement(null);keys.clear();closeControllerUI();$('economy-modal').hidden=false;switchEconomyTab(tab);focusControl($('economy-tab-'+tab));}
 
 function chooseEconomyBuild(kind){const cost=buildingCost(state,kind);if(kind==='drop-pad'&&!artilleryAsset){toast('Artillery model is still loading. Please try again shortly.');return;}if(!affordable(state,cost)){toast('Need '+formatCost(cost)+'. Only delivered materials can be spent.');return;}closeEconomy();setPlacement(kind);}
 
@@ -974,7 +1006,7 @@ function renderEconomy(){
 
  $('economy-stock').textContent=enabled?`${displayAmount(stock.alloy)} alloy  ·  ${displayAmount(stock.conductive)} conductive  ·  ${displayAmount(stock.crystal)} crystals. Shared team stockpiles; delivered loads only.`:'Legacy room: the host must RESTART to activate the new economy. Existing mission rules are unchanged.';
 
- for(const [kind,button] of economyBuildButtons){if(!BUILDINGS[kind]){button.hidden=true;continue;}button.hidden=false;const cost=buildingCost(state,kind);button.textContent=`${BUILDINGS[kind].label.toUpperCase()}\n${formatCost(cost)}\n${buildingNotes[kind]}`;button.disabled=(!enabled&&!['extractor','repair-station','turret'].includes(kind))||(['mech-factory','drop-pad'].includes(kind)&&!state.productionVersion);button.classList.toggle('unaffordable',!affordable(state,cost));}
+ for(const [kind,button] of economyBuildButtons){if(!BUILDINGS[kind]){button.hidden=true;continue;}button.hidden=false;const cost=buildingCost(state,kind);button.textContent=`${BUILDINGS[kind].label.toUpperCase()}\n${formatCost(cost)}\n${buildingNotes[kind]}${state.playtestVersion?' · '+constructionNote(kind):''}`;button.disabled=(!enabled&&!['extractor','repair-station','turret'].includes(kind))||(['mech-factory','drop-pad'].includes(kind)&&!state.productionVersion);button.classList.toggle('unaffordable',!affordable(state,cost));}
 
  const factory=economyFactory();$('economy-repair').disabled=!state.entities.some(e=>e.hp>0&&e.type==='mech'&&!e.launch&&selected.has(e.id));$('economy-hq-repair').disabled=$('economy-repair').disabled;$('economy-worker').textContent=factory?`TRAIN AT FACTORY · 30 ALLOY${factory.production?' · QUEUE BUSY':''}`:'FACTORY PRODUCTION · BUILD A FACTORY';$('economy-worker').disabled=!factory||!!factory.production||!factory.powered;$('economy-hq-worker').textContent=!state.entities.some(e=>e.hp>0&&e.type==='worker')&&state.resources<40?'HQ RESCUE WORKER · FREE':'TRAIN AT HQ · 40 ALLOY';
 
@@ -1014,7 +1046,7 @@ function renderEconomy(){
 
  if(enabled&&!state.productionVersion)$('economy-stock').textContent+=' This saved room uses the earlier mission. Host: RESTART for mech production and the hive campaign.';
 
- const stats=mech?mechStats(mech):null,job=mech?.upgradeJob;
+ const stats=mech?mechStats(mech):null,job=mech?.upgradeJob;if(stats)stats.speed*=movementMultiplier(state,mech);
 
  $('economy-upgrade-context').textContent=!enabled?'Restart this legacy room to unlock refits.':!mech?'Select your mech above. It will travel to an available powered upgrade station.':`${mechLabel(mech)} · ${stats.speed.toFixed(2)} m/s · ${Math.round(mech.maxHp)} hull · ${Math.round(stats.damageMultiplier*100)}% weapon output${mech.launch?' · LAUNCHING: refits and orders unlock after rollout':job?` · ${UPGRADES[job.kind]?.label||job.kind} ${Math.floor((job.progress||0)*100)}% (${mech.status})`:'. Select a refit. Travel and installation are server-controlled.'}`;
 
@@ -1030,7 +1062,7 @@ function renderEconomy(){
 
  if(signature!==structureSignature){structureSignature=signature;const list=$('economy-structures');list.replaceChildren();for(const e of structures){const button=document.createElement('button');button.id='economy-structure-'+e.id;button.onclick=()=>{selectIds([e.id]);focus.set(e.x,0,e.z);aimPoint.copy(focus);};list.appendChild(button);}}
 
- for(const e of structures){const button=$('economy-structure-'+e.id);button.textContent=`${buildingLabel(e.type).toUpperCase()} · ${Math.round(e.x)}, ${Math.round(e.z)}\n${e.type==='pod'?'24 generation + emergency support':!enabled?'Legacy rules':e.powered?'ONLINE':e.powerConnected?'WAITING FOR POWER':'OUT OF GRID'}${e.powerDemand?' · '+e.powerDemand+' demand':''}${e.type==='battery'?' · '+displayAmount(e.energy)+' stored':''}${e.dropJob?' / CHARGING '+Math.floor(e.dropJob.progress*100)+'%':''}${e.summonedId?' / DELIVERED':''}${e.production?' · '+productionText(e):''}`;button.classList.toggle('selected',selected.has(e.id));}
+ for(const e of structures){const button=$('economy-structure-'+e.id);button.textContent=`${buildingLabel(e.type).toUpperCase()} · ${Math.round(e.x)}, ${Math.round(e.z)}\n${e.type==='pod'?'24 generation + emergency support':e.construction&&e.progress<1?constructionStatus(e):!enabled?'Legacy rules':e.powered?'ONLINE':e.powerConnected?'WAITING FOR POWER':'OUT OF GRID'}${e.powerDemand?' · '+e.powerDemand+' demand':''}${e.type==='battery'?' · '+displayAmount(e.energy)+' stored':''}${e.dropJob?' / CHARGING '+Math.floor(e.dropJob.progress*100)+'%':''}${e.summonedId?' / DELIVERED':''}${e.production?' · '+productionText(e):''}`;button.classList.toggle('selected',selected.has(e.id));}
 
  const inspected=structures.find(e=>selected.has(e.id));$('economy-inspect').textContent=inspected?`${buildingLabel(inspected.type)} selected. ${Math.ceil(inspected.hp)} / ${inspected.maxHp} HP. ${inspected.powerConnected===false?'Connect a relay chain or build a local generator.':inspected.powered===false?'Increase supply or change priority.':'Select a structure below to inspect and center it.'}`:'Select a structure to inspect its power state and center the camera.';
 
@@ -1068,6 +1100,13 @@ const clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);
  if(placement&&state?.economyVersion&&BUILDINGS[placement]){const coverage=coverageStatus(state,placement,aimPoint,BUILDINGS);ghost.material.color.setHex(coverage.connected?0x9bdfb9:0xffa36f);powerPreview.visible=!!coverage.radius;powerPreview.position.set(aimPoint.x,.16,aimPoint.z);powerPreview.scale.setScalar(coverage.radius||1);$('action-hint').textContent=coverage.label+' '+(controllerActive?'A places · B cancels':'Click places · Esc cancels');}else{const node=state?.entities.find(e=>selected.has(e.id)&&e.hp>0&&(e.type==='pod'||BUILDINGS[e.type]?.radius));powerPreview.visible=!!node;if(node){powerPreview.position.set(node.x,.16,node.z);powerPreview.scale.setScalar(node.type==='pod'?36:BUILDINGS[node.type].radius);powerPreview.material.color.setHex(node.powerConnected===false?0xffa36f:0x9bdfb9);}ghost.material.color.setHex(0xffbf69);}
 
  const foundryPlacement=placement==='mech-factory',largePad=['repair-station','upgrade-station','mech-factory','drop-pad'].includes(placement);launchPreview.visible=launchMarker.visible=foundryPlacement&&!introActive();launchPreview.position.set(aimPoint.x,.19,aimPoint.z);launchMarker.position.set(aimPoint.x,.2,aimPoint.z+20);placementFootprint.scale.set(foundryPlacement?1.5:placement==='drop-pad'?22/16:1,1,foundryPlacement?24/14:placement==='drop-pad'?22/14:1);placementFootprint.visible=largePad&&!introActive();if(largePad){placementFootprint.position.set(aimPoint.x,.19,aimPoint.z);const clear=servicePlacementClear(state,placement,aimPoint);placementFootprint.material.color.setHex(clear?0xffbf69:0xef785d);ghost.visible=false;if(!clear)$('action-hint').textContent=foundryPlacement?'Keep the 24 × 24m foundry and its marked front launch lane clear.':'The full 16 × 14m pad and front access must stay clear of structures and deposits.';}else ghost.visible=!!placement;
+ if(placement&&placement!=='hvd'&&state?.playtestVersion&&!introActive()){
+  const candidate=placement==='extractor'?state.deposits.find(d=>d.remaining>0&&Math.hypot(d.x-aimPoint.x,d.z-aimPoint.z)<8)||aimPoint:aimPoint;
+  if(!buildReach(state,playerId,candidate)||!visionAt(candidate.x,candidate.z)){
+   ghost.material.color.setHex(0xef785d);placementFootprint.material.color.setHex(0xef785d);
+   $('action-hint').textContent='Outside build coverage. Scout with your mech, or extend from a completed structure.';
+  }
+ }
 
  const landingActive=introActive(),introTime=landingActive?introPresentation.advance(rawDt,performance.now()/1000,paused||!connected):INTRO_DURATION,landing=sampleLanding(introTime,{reducedMotion});
 
@@ -1137,13 +1176,22 @@ const clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);
 
  if(g.userData.economyArt){const job=state.entities.find(m=>m.upgradeJob?.stationId===e.id)?.upgradeJob;g.userData.economyArt.update({...e,upgradeProgress:job?.progress},renderTime);}
 
+ // Raise the structure in its final footprint as the crew assembles it. Do
+ // not shrink the whole footprint or let an unfinished facility look operational.
+ if(state.playtestVersion&&Number.isFinite(e.progress)&&Object.hasOwn(BUILDINGS,e.type))g.scale.y=.10+.90*e.progress;
+ if(e.type==='worker'&&state.playtestVersion){
+  const welding=e.hp>0&&e.status==='building'&&e.order?.type==='construct'&&!landingActive;
+  let light=g.userData.workLight;
+  if(welding&&(!light||light.parent!==g)){light=mesh(new THREE.OctahedronGeometry(.38),materials.light,[.24,1.20,.59],g);light.name='Construction tool glow';light.castShadow=false;g.userData.workLight=light;}
+  if(light){light.visible=welding;if(welding)light.scale.setScalar(reducedMotion?1:.88+.12*Math.sin(renderTime*7));}
+ }
  if(e.type==='worker'&&g.userData.mixer){g.position.y=0;const turnRate=animationDt?Math.atan2(Math.sin(g.rotation.y-oldAngle),Math.cos(g.rotation.y-oldAngle))/animationDt:0;const clip=e.hp<=0?'Shutdown':renderTime<(g.userData.hitUntil||0)?'HitReact':e.status==='idle'&&renderTime<(g.userData.bootUntil||0)?'BootUp':workerClip({...e,speed,turnRate});playWorker(g,clip,animationDt,speed);if(g.userData.payload)g.userData.payload.visible=e.cargo>.05&&e.hp>0;}
 
  if(e.type==='pod'&&g.userData.deployAction){const action=g.userData.deployAction;action.paused=false;g.userData.mixer.setTime(landingActive?landing.hqClipTime:action.getClip().duration);}
 
  if(g.userData.serviceArt){const active=state.entities.some(m=>m.type==='mech'&&m.hp>0&&m.status==='repairing'&&Math.hypot(m.x-e.x,m.z-e.z)<.5);g.userData.serviceArt.update(e,renderTime,active);}
 
- if(['extractor','turret'].includes(e.type)&&g.userData.mixer){g.userData.mixer.update(e.type==='extractor'&&e.progress<1?0:animationDt);if(g.userData.art)g.userData.art.scale.setScalar((g.userData.assetScale||1)*(e.type==='extractor'?Math.max(.15,e.progress??1):1));}
+ if(['extractor','turret'].includes(e.type)&&g.userData.mixer){g.userData.mixer.update(e.progress<1?0:animationDt);if(g.userData.art)g.userData.art.scale.setScalar((g.userData.assetScale||1)*(e.type==='extractor'&&!state.playtestVersion?Math.max(.15,e.progress??1):1));}
 
  g.userData.hiveArt?.update(e,state.phase==='won'?Math.max(renderTime,(e.deadAt||0)+3):renderTime,!paused||state.phase==='won');
 
@@ -1179,14 +1227,21 @@ function renderSelectionActions(){
 
  if(signature!==selectionSignature){selectionSignature=signature;const box=$('selection-actions');box.replaceChildren();
 
- for(const action of actions){const b=document.createElement('button');b.dataset.action=action;b.id='context-'+action;const labels={clear:placement?'CANCEL':'CLEAR',build:'BUILD',worker:'TRAIN WORKER',combat:'BUILD VANGUARD','long-range':'BUILD LANCER',cancel:'CANCEL QUEUE',repair:'REPAIR',upgrades:'UPGRADES',power:'POWER',objective:'MISSION',hq:'HQ'};b.textContent=labels[action];b.onclick=()=>{
+ for(const action of actions){const b=document.createElement('button');b.dataset.action=action;b.id='context-'+action;const labels={clear:placement?'CANCEL':'CLEAR',build:'BUILD ›',worker:'TRAIN WORKER',combat:'BUILD VANGUARD','long-range':'BUILD LANCER',cancel:'CANCEL QUEUE','cancel-construction':'CANCEL BUILD',repair:'REPAIR',upgrades:'UPGRADES ›',power:'POWER ›',objective:'MISSION',hq:'HQ'};b.textContent=labels[action];if(['build','upgrades','power'].includes(action))b.setAttribute('aria-haspopup','dialog');if(action==='cancel-construction')b.title='Cancel construction and refund the unfinished portion.';b.onclick=()=>{
 
- if(action==='clear'){setPlacement(null);selectIds([]);closeControllerUI();}else if(action==='build')openEconomy('build');else if(action==='power')openEconomy('power');else if(action==='upgrades')openEconomy('upgrades');else if(action==='repair')repair();else if(action==='objective'){$('objective').classList.toggle('expanded');focusObjective();}else if(action==='hq')selectIds(['pod']);else if(single){if(action==='worker')command(single.type==='pod'?{type:'worker'}:{type:'worker',factoryId:single.id});else if(action==='cancel')command({type:'cancel-production',factoryId:single.id});else command({type:'mech',factoryId:single.id,role:action});}};box.appendChild(b);}}
+ lastUnitActivation=null;
+ if(action==='clear'){setPlacement(null);selectIds([]);closeControllerUI();}else if(action==='build')openEconomy('build');else if(action==='power')openEconomy('power');else if(action==='upgrades')openEconomy('upgrades');else if(action==='repair')repair();else if(action==='objective'){$('objective').classList.toggle('expanded');focusObjective();}else if(action==='hq'){const hq=state.entities.find(e=>e.type==='pod'&&e.hp>0);if(hq){selectIds([hq.id]);focus.set(hq.x,0,hq.z);aimPoint.copy(focus);}}else if(single){if(action==='worker')command(single.type==='pod'?{type:'worker'}:{type:'worker',factoryId:single.id});else if(action==='cancel')command({type:'cancel-production',factoryId:single.id});else if(action==='cancel-construction')command({type:'cancel-construction',targetId:single.id});else command({type:'mech',factoryId:single.id,role:action});}};box.appendChild(b);}}
 
- for(const b of $('selection-actions').children){const a=b.dataset.action;b.disabled=['worker','combat','long-range'].includes(a)&&!!(single?.production||single?.launchId||single?.powered===false);if(a==='cancel')b.disabled=!single?.production||(playerId&&single.production.owner!==0&&single.production.owner!==playerId);if(a==='worker'){b.title=single?.type==='pod'?$('economy-hq-worker').textContent:$('economy-worker').textContent;b.textContent=b.title.includes('FREE')?'WORKER · FREE':`WORKER · ${single?.type==='pod'?40:30}A`;}if(a==='combat'||a==='long-range'){b.title=$('economy-produce-'+a).textContent;b.textContent=a==='combat'?'VANGUARD':'LANCER';}}
+ for(const b of $('selection-actions').children){const a=b.dataset.action;b.disabled=['worker','combat','long-range'].includes(a)&&!!(single?.production||single?.launchId||single?.powered===false);if(a==='repair')b.disabled=!chosen.some(e=>e.type==='mech'&&!e.launch);if(a==='cancel')b.disabled=!single?.production||(playerId&&single.production.owner!==0&&single.production.owner!==playerId);if(a==='worker'){if(single?.type==='pod')b.disabled=$('economy-hq-worker').disabled;b.title=single?.type==='pod'?$('economy-hq-worker').textContent:$('economy-worker').textContent;b.textContent=b.title.includes('FREE')?'WORKER · FREE':`WORKER · ${single?.type==='pod'?40:30}A`;}if(a==='combat'||a==='long-range'){b.title=$('economy-produce-'+a).textContent;b.textContent=a==='combat'?'VANGUARD':'LANCER';}}
 
- document.body.classList.toggle('controller-playing',controllerActive);$('context-hint').textContent=placement?'A / click: place · B / Esc: cancel':selectedUnits().length?'A: order  ·  X: inspect  ·  Y: actions  ·  B: clear':'A: select  ·  Y: actions  ·  D-pad: units';if($('selection-actions').contains(document.activeElement)&&document.activeElement.title)$('context-hint').textContent=document.activeElement.title;
+ renderControlHint();
 
+}
+
+function renderControlHint(){
+ document.body.classList.toggle('controller-playing',controllerActive);
+ $('context-hint').textContent=controllerUI?'UNIT ACTIONS · D-pad / stick: choose · A: select · B: back':placement?'A / click: place · B / Esc: cancel':controllerActive?'D-pad: units · Hold LB/RB: actions · A: select/order · Double A: similar':'Click: select/order · Double-click: similar · Alt-click: inspect';
+ $('selection-actions').setAttribute('aria-label',controllerUI?'Selected unit actions submenu':'Selected unit or building actions');
 }
 
 $('objective').onclick=()=>$('objective').classList.toggle('expanded');

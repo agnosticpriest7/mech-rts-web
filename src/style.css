@@ -72,3 +72,8 @@ header{height:48px!important;padding:0 16px;flex-wrap:nowrap!important;align-con
 #map-choice{display:block;width:100%;padding:12px;margin:6px 0 14px;background:#172b2d;color:#e2d4b7;border:1px solid #667567;font:inherit}label[for="map-choice"]{font:10px monospace;letter-spacing:.18em;color:#b4beac}
 
 .music-settings{border:1px solid #36515b;padding:16px;margin:18px 0;background:#101e26}.music-settings h3{margin-top:0}.music-settings label{display:flex;justify-content:space-between;gap:12px}.music-settings input[type=range]{width:100%;accent-color:#66dfc0;margin:12px 0}.music-actions{display:flex;flex-wrap:wrap;gap:8px}.music-actions button{min-height:42px}#music-status{color:#9de9d5}header #music{white-space:nowrap}
+
+/* Holding a shoulder opens the same quiet, bounded contextual menu as Y. */
+.controller-actions-open #selection-actions{outline:1px solid #d9b77c;outline-offset:2px;background:#263932;scroll-padding-inline:6px}
+.controller-actions-open #context-hint{color:#ffdc9d}
+#selection-actions button[aria-haspopup="dialog"]{border-bottom-color:#b69c6c}

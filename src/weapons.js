@@ -1,4 +1,4 @@
-import { RULES } from './simulation.js';
+import { RULES } from './simulation.js?v=field-playtest-1';
 // Fictional cinematic rotor speed; steady through the whole firing burst.
 export const GATLING_ROTOR_SPEED=100;
 export const rotorBlurOpacity=speed=>Math.max(0,Math.min(.24,(speed-28)/72*.24));

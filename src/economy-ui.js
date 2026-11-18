@@ -1,3 +1,4 @@
+import {CONSTRUCTION_DURATIONS,isUnderConstruction} from './economy-rules.js?v=field-playtest-1';
 // Presentation helpers only. The server is the sole authority for balances and jobs.
 export const RESOURCE_LABELS=Object.freeze({alloy:'Alloy',conductive:'Conductive',crystal:'Crystal'});
 export const RESOURCE_COLORS=Object.freeze({alloy:0x84e2c5,conductive:0xe9b66c,crystal:0xb491ed});
@@ -11,10 +12,18 @@ export function shortResource(kind){return RESOURCE_LABELS[kind]||'Alloy';}
 export function buildingLabel(kind){return BUILD_LABELS[kind]||String(kind||'Unit').replaceAll('-',' ');}
 export function selectedUnitIds(state,selected){return (state?.entities||[]).filter(e=>e.hp>0&&selected.has(e.id)&&['mech','worker'].includes(e.type)).map(e=>e.id);}
 export function coverageStatus(state,kind,point,catalog){
- const spec=catalog[kind]||{},nodes=(state?.entities||[]).filter(e=>e.hp>0&&(e.type==='pod'||catalog[e.type]?.radius));
+ const spec=catalog[kind]||{},nodes=(state?.entities||[]).filter(e=>e.hp>0&&!(e.construction&&isUnderConstruction(e))&&(e.type==='pod'||catalog[e.type]?.radius));
  if(spec.generation)return {connected:true,radius:spec.radius,label:`Independent supply: +${spec.generation} power · ${spec.radius}m coverage`};
  const connected=nodes.some(e=>e.powerConnected!==false&&Math.hypot(e.x-point.x,e.z-point.z)<= (spec.radius?Math.max(spec.radius,e.type==='pod'?36:catalog[e.type].radius):(e.type==='pod'?36:catalog[e.type].radius)));
  return {connected,radius:spec.radius||0,label:connected?`Within grid reach${spec.demand?' · '+spec.demand+' power demand':''}. Supply is allocated after placement.`:'Outside the grid. Link relays to a powered node, or place a local generator.'};
 }
 
 export function displayAmount(value){return Math.floor(Math.max(0,Number.isFinite(value)?value:0)+1e-8);}
+
+export function constructionNote(kind){return kind==='drop-pad'?'Orbital beacon · no worker required · 15s powered charge':CONSTRUCTION_DURATIONS[kind]?`${CONSTRUCTION_DURATIONS[kind]}s worker construction · travel time extra`:'';}
+export function constructionStatus(e){
+ if(!isUnderConstruction(e))return '';
+ const percent=Math.floor(Math.max(0,e.progress)*100),remaining=Math.ceil((1-e.progress)*(e.construction?.duration||CONSTRUCTION_DURATIONS[e.type]||6));
+ const state=e.construction?.paused?'PAUSED: order a worker to resume':!e.builderId?'WAITING FOR A WORKER':e.status==='building'?`${remaining}s work remaining`:'WORKER EN ROUTE';
+ return `CONSTRUCTION ${percent}% · ${state}`;
+}

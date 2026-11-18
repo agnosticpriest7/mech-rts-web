@@ -1,5 +1,9 @@
 /** Shared economy catalog and deterministic power allocation; no browser dependencies. */
 export const PRODUCTION_RULES=Object.freeze({mechCost:Object.freeze({alloy:160,conductive:40}),mechDuration:50,mechCap:4,hqWorkerDuration:30,workerFactoryDuration:12});
+// Paid, on-site worker time. Travel is additional; orbital beacons deliberately
+// keep their separate charge/descent sequence instead of pretending to be built.
+export const CONSTRUCTION_DURATIONS=Object.freeze({extractor:6,wire:4,relay:5,battery:7,generator:8,turret:8,reactor:12,'worker-factory':12,'repair-station':12,'upgrade-station':14,'mech-factory':20});
+export const isUnderConstruction=e=>Number.isFinite(e?.progress)&&e.progress<1;
 export const BUILDINGS=Object.freeze({
  generator:{label:'Generator',cost:{alloy:80},hp:420,cap:6,generation:18,radius:34},
  reactor:{label:'Reactor',cost:{alloy:110,conductive:40},hp:600,cap:4,generation:44,radius:38},
@@ -29,7 +33,10 @@ const categoryOrder={defense:['defense','repair','production'],repair:['repair',
 /** Connected components prevent a distant generator/battery from energizing an unrelated outpost. */
 export function updatePower(s,dt=0){
  if(!s.economyVersion)return;
- const all=s.entities.filter(alive),nodes=all.filter(e=>e.type==='pod'||BUILDINGS[e.type]?.radius),visited=new Set(),components=[];
+ const living=s.entities.filter(alive),all=living.filter(e=>!e.construction||!isUnderConstruction(e)),nodes=all.filter(e=>e.type==='pod'||BUILDINGS[e.type]?.radius),visited=new Set(),components=[];
+ // Preserve old snapshots' extractor rules, but new foundations cannot supply,
+ // relay, store or consume power before their worker has finished the structure.
+ for(const e of living)if(e.construction&&isUnderConstruction(e)){e.powered=false;e.powerConnected=false;e.powerDemand=0;}
  const radius=e=>e.type==='pod'?36:BUILDINGS[e.type].radius;
  for(const node of nodes){if(visited.has(node.id))continue;const group=[],queue=[node];visited.add(node.id);while(queue.length){const n=queue.shift();group.push(n);for(const other of nodes)if(!visited.has(other.id)&&distance(n,other)<=Math.max(radius(n),radius(other))){visited.add(other.id);queue.push(other);}}components.push({nodes:group,loads:[]});}
  const priority=categoryOrder[s.powerPriority]?s.powerPriority:'defense',order=categoryOrder[priority];
