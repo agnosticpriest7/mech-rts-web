@@ -81,8 +81,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 16597,
-      "sha256": "b327a9362beb4e1469054ca2eff2fb73e32f76a0145092c7ad71a33bcb461b1c"
+      "bytes": 16831,
+      "sha256": "617ac937f03f3c550c9ad1bd54ca45c8cb22c17c7c98c857b0584f49d4dd4645"
     },
     {
       "path": "src/alien-art.js",
@@ -101,8 +101,8 @@
     },
     {
       "path": "src/client.js",
-      "bytes": 104087,
-      "sha256": "61e2d3d227634bb99576361d2ae75e85e1841438c2e5bcbbcdc84f070d9d1ee7"
+      "bytes": 107264,
+      "sha256": "ea765e6dddd17eb0bac4e80a23cb2d47c3109f10c8b41f941684f1bf65939fa3"
     },
     {
       "path": "src/drop-pad-art.js",
@@ -131,8 +131,8 @@
     },
     {
       "path": "src/gamepad.js",
-      "bytes": 3644,
-      "sha256": "e4568be39a2b796c425959bde14a29c12ac2c5d00dc2e8ac8c6987babe2c1718"
+      "bytes": 4660,
+      "sha256": "88105c4fd975734891334c173bc31969a11ffd409a38b6b6b80909bfc3542c70"
     },
     {
       "path": "src/gatling-audio.js",
@@ -172,7 +172,7 @@
     {
       "path": "src/music-player.js",
       "bytes": 7201,
-      "sha256": "00d4dc2bcd41c828dc0f7783a9e5813474e6fcdd1c14a76c20145960e3d411b9"
+      "sha256": "141741c40350c86a96a911d9d73edc3932624b4921a94457fca08282b53b43fb"
     },
     {
       "path": "src/room-transport.js",
@@ -201,8 +201,8 @@
     },
     {
       "path": "src/style.css",
-      "bytes": 24992,
-      "sha256": "3609d4c3df2abc4d0ea46fb7ea166a46ec5b2f8bea01b1c0e7d142278fac97f7"
+      "bytes": 24981,
+      "sha256": "7f7b9c8c32bf4401e9feddb96776b027313d74970e22ede93c027682207e31fe"
     },
     {
       "path": "src/supply-landing.js",

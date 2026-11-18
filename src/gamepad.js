@@ -16,6 +16,29 @@ export function createGamepadReader() {
   return {index:pad.index,held,pressed,lx:deadzone(pad.axes[0]),ly:deadzone(pad.axes[1]),rx:deadzone(pad.axes[2]),ry:deadzone(pad.axes[3]),zoom:(pad.buttons[6]?.value||0)-(pad.buttons[7]?.value||0)};
  };
 }
+// Menu movement can repeat, unlike A/B and all world commands. Pick one axis
+// per gesture; hysteresis keeps stick noise near the dead zone from re-firing.
+export function createMenuDirectionReader(){
+ let direction=null,nextAt=0;
+ return (input,now)=>{
+  if(!input){direction=null;return null;}
+  const {held,lx,ly}=input;
+  let next=['up','down','left','right'].find(key=>held.has(key));
+  if(!next){
+   const horizontal=lx<0?'left':'right',vertical=ly<0?'up':'down';
+   const x=Math.abs(lx),y=Math.abs(ly);
+   // Keep the previous axis near a diagonal. Otherwise a tiny wiggle can
+   // alternate axes each frame and bypass the repeat delay.
+   if(direction===horizontal&&x>=.30&&x+.18>=y)next=horizontal;
+   else if(direction===vertical&&y>=.30&&y+.18>=x)next=vertical;
+   else if(Math.max(x,y)>=.55)next=x>y?horizontal:vertical;
+  }
+  if(!next){direction=null;return null;}
+  if(next!==direction){direction=next;nextAt=now+380;return next;}
+  if(now>=nextAt){nextAt=now+130;return next;}
+  return null;
+ };
+}
 export function wrapIndex(index,delta,length){return length?((index+delta)%length+length)%length:0;}
 export function controllerProfile(userAgent=''){return /Xbox/i.test(userAgent)?{console:true,mech:'m06-lod1.glb',pod:'anchor-lod1.glb'}:{console:false,mech:'m06-runtime.glb',pod:'anchor-runtime.glb'};}
 

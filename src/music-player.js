@@ -1,5 +1,5 @@
 // A single streaming media element, not three full decoded AudioBuffers.
-// Volume is linear media gain (0.4 = 40%), separate from weapon/effects levels.
+// Volume is linear media gain (0.2 = 20%), separate from weapon/effects levels.
 export const MUSIC_TRACKS = Object.freeze([
   { title: 'Steel Horizon v4', url: new URL("../assets/audio/music/steel-horizon-v4.mp3",import.meta.url).href },
   { title: 'Steel Horizon v3', url: new URL("../assets/audio/music/steel-horizon-v3.mp3",import.meta.url).href },
@@ -15,7 +15,7 @@ export class MusicPlayer {
     this.createAudio = createAudio;
     this.storage = storage;
     this.onChange = onChange;
-    this.volume = .4;
+    this.volume = .2;
     this.enabled = true;
     this.masterEnabled = true;
     this.active = false;

@@ -42,11 +42,11 @@ import { workerClip, objectiveTarget, objectiveHint } from './mission-ui.js';
 import { SnapshotTimeline, SnapshotTrack, LocomotionBlend, dampAngle } from './motion.js';
 
 import { GatlingAudio } from './gatling-audio.js';
-import { MusicPlayer } from './music-player.js';
+import { MusicPlayer } from './music-player.js?v=menu-2';
 
 import { GatlingShots, GatlingRotors, authoritativeSide, rotorBlurOpacity } from './weapons.js';
 
-import { createGamepadReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js';
+import { createGamepadReader, createMenuDirectionReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js?v=menu-2';
 
 const graphicsProfile=controllerProfile(navigator.userAgent);
 
@@ -662,7 +662,9 @@ $('solo').onclick=()=>connect({type:'create',mode:'solo',map:$('map-choice').val
 
 // Controller UI is separate from world input. A held button never repeats purchases.
 
-const readGamepad=createGamepadReader();let controllerActive=false,controllerUI=false,padWasConnected=false,rawInputEnabled=true,rawInputArmed=true;
+const readGamepad=createGamepadReader(),readMenuDirection=createMenuDirectionReader(),lastMenuFocus=new WeakMap();
+let lastMenu=null,optionEdit=null;
+let controllerActive=false,controllerUI=false,padWasConnected=false,rawInputEnabled=true,rawInputArmed=true;
 
 $('music').onclick=()=>{musicPlayer.unlock();$('help-modal').hidden=false;$('music-retry').focus();};
 $('music-toggle').onclick=()=>{musicPlayer.setEnabled(!musicPlayer.enabled);musicPlayer.unlock();};
@@ -673,11 +675,65 @@ $('music-next').onclick=()=>{musicPlayer.next();musicPlayer.unlock();};
 $('music-retry').onclick=()=>musicPlayer.retry();
 updateMusicUI();
 
-function visibleControls(root){return [...root.querySelectorAll('button,input')].filter(e=>!e.disabled&&e.getClientRects().length);}
+function visibleControls(root){return [...root.querySelectorAll('button,input,select')].filter(e=>!e.disabled&&e.getClientRects().length);}
 
 function focusControl(el){document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));if(el){el.classList.add('pad-focus');el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});}}
 
-function closeControllerUI(){controllerUI=false;document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));document.activeElement?.blur();}
+function closeControllerUI(){finishOptionEdit(false);controllerUI=false;document.querySelectorAll('.pad-focus').forEach(e=>e.classList.remove('pad-focus'));document.activeElement?.blur();}
+
+// Never send a synthetic click to a native popup: console browsers can put
+// their own picker above the game. The real select becomes an inline list.
+function finishOptionEdit(commit){
+ if(!optionEdit)return;
+ const {el,index,size}=optionEdit;optionEdit=null;
+ if(!commit)el.selectedIndex=index;
+ el.size=size;
+ if(commit&&el.selectedIndex!==index)el.dispatchEvent(new Event('change',{bubbles:true}));
+}
+
+function moveOption(el,step){
+ const choices=Array.from(el.options).filter(option=>!option.disabled);
+ if(!choices.length)return;
+ const index=choices.indexOf(el.options[el.selectedIndex]);
+ el.value=choices[wrapIndex(index,step,choices.length)].value;
+ if(!optionEdit)el.dispatchEvent(new Event('change',{bubbles:true}));
+}
+
+function controllerMenu(){
+ for(const id of ['help-modal','code-keyboard','economy-modal','end-screen','landing-intro','lobby']){
+  const el=$(id);if(!el.hidden)return el;
+ }
+ return controllerUI?$('selection-actions'):null;
+}
+
+function ensureMenuFocus(root){
+ const available=el=>el&&root.contains(el)&&el.matches('button,input,select')&&!el.disabled&&el.getClientRects().length;
+ const wasFocused=available(document.activeElement);
+ const saved=lastMenuFocus.get(root);
+ // Leave Room is first in DOM order during landing. Prefer a reversible
+ // default for the host; peers still get their only enabled control.
+ const initial=root.id==='landing-intro'?$('intro-pause'):null;
+ const el=wasFocused?document.activeElement:available(saved)?saved:available(initial)?initial:visibleControls(root)[0];
+ if(el){
+  if(!wasFocused||!el.classList.contains('pad-focus'))focusControl(el);
+  lastMenuFocus.set(root,el);
+ }
+ return {el,wasFocused};
+}
+
+function moveMenuFocus(root,el,direction){
+ const controls=visibleControls(root),index=controls.indexOf(el);
+ let delta=['left','up'].includes(direction)?-1:1;
+ if(root===$('code-keyboard')&&['up','down'].includes(direction)){
+  const keys=$('code-keys').children.length,cols=6;
+  const footer=keys+((index%cols)>=cols/2?1:0);
+  if(index>=keys)delta=(direction==='up'?keys-cols:0)+(index-keys)*3-index;
+  else if(direction==='down'&&index+cols>=keys||direction==='up'&&index<cols)delta=footer-index;
+  else delta*=cols;
+ }
+ const next=controls[wrapIndex(index,delta,controls.length)];
+ focusControl(next);if(next)lastMenuFocus.set(root,next);
+}
 
 function openCodeKeyboard(){ $('code-keyboard').hidden=false;focusControl($('code-keys').firstElementChild);updateCodeDisplay(); }
 
@@ -749,52 +805,81 @@ function updateController(dt){
 
  const {pads}=checkController();const input=readGamepad(rawInputEnabled?pads:[]);
 
- if(input&&!rawInputArmed){if(!input.held.size&&!input.lx&&!input.ly&&!input.rx&&!input.ry&&!input.zoom)rawInputArmed=true;return;}
-
- if(!input){if(padWasConnected){controllerActive=false;closeControllerUI();}padWasConnected=false;return;}
-
+ const direction=readMenuDirection(input,performance.now());
+ const neutral=input&&!input.held.size&&!input.lx&&!input.ly&&!input.rx&&!input.ry&&!input.zoom;
+ if(input&&!rawInputArmed){lastMenu=controllerMenu();if(neutral)rawInputArmed=true;return;}
+ if(!input){if(padWasConnected){controllerActive=false;closeControllerUI();}padWasConnected=false;lastMenu=null;return;}
  padWasConnected=true;
-
- if(!controllerActive&&!input.held.size&&!input.lx&&!input.ly&&!input.rx&&!input.ry&&!input.zoom)return;
-
- if(!controllerActive){controllerActive=true;if(!gameStarted)focusControl(visibleControls($('lobby'))[0]);}
-
- const p=input.pressed;
-
- if(introActive()&&$('help-modal').hidden&&!p.has('view')){
-
-  const controls=visibleControls($('landing-intro')),index=controls.indexOf(document.activeElement),delta=p.has('right')||p.has('down')?1:p.has('left')||p.has('up')?-1:0;
-
-  if(delta)focusControl(controls[index<0?0:wrapIndex(index,delta,controls.length)]);
-
-  if(p.has('a')&&controls.includes(document.activeElement))document.activeElement.click();
-
-  if(p.has('b'))skipIntro();if(p.has('menu')&&playerId!==2)send('pause');return;
-
+ if(!controllerActive&&neutral)return;
+ controllerActive=true;
+ const p=input.pressed,menu=controllerMenu();
+ if(optionEdit&&(!menu?.contains(optionEdit.el)||document.activeElement!==optionEdit.el))finishOptionEdit(false);
+ // Do not turn held menu input into camera movement, orders or selections.
+ if(!menu&&lastMenu){
+  lastMenu=null;
+  if(!neutral){rawInputArmed=false;return;}
  }
-
- if(p.has('view')){$('help-modal').hidden=!$('help-modal').hidden;if(!$('help-modal').hidden)focusControl($('close-help'));else closeControllerUI();return;}
-
- if(p.has('menu')&&gameStarted&&playerId!==2)send('pause');
-
- let modal=!$('code-keyboard').hidden?$('code-keyboard'):!$('help-modal').hidden?$('help-modal'):!$('economy-modal').hidden?$('economy-modal'):!$('end-screen').hidden?$('end-screen'):!$('lobby').hidden?$('lobby'):null;
-
- if(p.has('y')&&(!modal||modal===$('economy-modal'))){if(modal)closeEconomy();else {controllerUI=!controllerUI;if(controllerUI)focusControl(visibleControls($('selection-actions'))[0]);}return;}
-
- if(p.has('b')){if(!$('code-keyboard').hidden){$('code-done').click();return;}if(!$('help-modal').hidden){$('help-modal').hidden=true;closeControllerUI();return;}if(!$('economy-modal').hidden){closeEconomy();return;}if(placement)setPlacement(null);else if(controllerUI)closeControllerUI();else selectIds([]);return;}
-
- if(modal||controllerUI){
-
-  const controls=visibleControls(modal||$('selection-actions'));let index=controls.indexOf(document.activeElement);if(index<0){index=0;focusControl(controls[0]);}
-
-  const grid=modal===$('code-keyboard');const delta=p.has('right')||p.has('rb')?1:p.has('left')||p.has('lb')?-1:p.has('down')?(grid?6:1):p.has('up')?(grid?-6:-1):0;
-
-  if(delta)focusControl(controls[wrapIndex(index,delta,controls.length)]);
-
-  if(p.has('a')){const control=document.activeElement;if(control===$('room-code'))openCodeKeyboard();else if(controls.includes(control)){control.click();if(gameStarted&&controllerUI){closeControllerUI();}else if(modal&&!modal.hidden&&!modal.contains(document.activeElement))focusControl(visibleControls(modal)[0]);}}
-
+ lastMenu=menu;
+ const {el,wasFocused}=menu?ensureMenuFocus(menu):{};
+ if(p.has('view')){
+  finishOptionEdit(false);
+  const help=$('help-modal');
+  help.hidden=!help.hidden;
+  if(!help.hidden)focusControl($('close-help'));
+  else if(controllerMenu())ensureMenuFocus(controllerMenu());
+  else closeControllerUI();
   return;
-
+ }
+ if(p.has('b')){
+  if(optionEdit){finishOptionEdit(false);return;}
+  if(menu===$('help-modal')){
+   menu.hidden=true;
+   if(controllerMenu())ensureMenuFocus(controllerMenu());else closeControllerUI();
+  }else if(menu===$('code-keyboard')){
+   menu.hidden=true;focusControl($('room-code'));
+  }else if(menu===$('economy-modal'))closeEconomy();
+  else if(menu===$('landing-intro'))skipIntro();
+  else if(menu===$('lobby')){if(!$('ready-panel').hidden)$('leave-lobby').click();}
+  else if(menu===$('selection-actions'))closeControllerUI();
+  else if(!menu){if(placement)setPlacement(null);else selectIds([]);}
+  return;
+ }
+ if(p.has('menu')){if(gameStarted&&playerId!==2)send('pause');return;}
+ if(p.has('y')&&(!menu||menu===$('economy-modal')||menu===$('selection-actions'))){
+  if(menu===$('economy-modal'))closeEconomy();
+  else if(controllerUI)closeControllerUI();
+  else if(gameStarted){const first=visibleControls($('selection-actions'))[0];if(first){controllerUI=true;focusControl(first);}}
+  return;
+ }
+ if(menu){
+  if(!el)return;
+  if(p.has('a')){
+   // If a lobby or peer control was just hidden/disabled, don't activate
+   // the replacement before the player can see what's now in focus.
+   if(!wasFocused)return;
+   if(el.matches('select')){
+    if(optionEdit)finishOptionEdit(true);
+    else{optionEdit={el,index:el.selectedIndex,size:el.size};el.size=Math.max(2,Math.min(6,el.options.length));}
+   }else if(el===$('room-code'))openCodeKeyboard();
+   else if(el.getAttribute('type')!=='range'){
+    el.click();
+    if(menu===$('selection-actions')&&controllerUI)closeControllerUI();
+   }
+   return;
+  }
+  if(!wasFocused)return;
+  if(p.has('rb')||p.has('lb')){
+   finishOptionEdit(true);moveMenuFocus(menu,el,p.has('rb')?'right':'left');return;
+  }
+  if(!direction)return;
+  const horizontal=direction==='left'||direction==='right',delta=direction==='left'||direction==='up'?-1:1;
+  if(el.matches('select')&&(horizontal||optionEdit)){moveOption(el,delta);return;}
+  if(horizontal&&el.getAttribute('type')==='range'){
+   const value=el.value;
+   if(delta>0)el.stepUp();else el.stepDown();
+   if(el.value!==value){el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
+  }else moveMenuFocus(menu,el,direction);
+  return;
  }
 
  if(!gameStarted)return;
