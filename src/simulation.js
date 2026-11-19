@@ -1,5 +1,5 @@
 import { FRONTIER_MAP, mapForState, terrainPointClear, terrainSegmentClear, findTerrainRoute } from './frontier-map.js';
-import {PRODUCTION_RULES,BUILDINGS,UPGRADES,CONSTRUCTION_DURATIONS,isUnderConstruction,buildingCost,canAfford,spend,costLabel,mechStats,updatePower} from './economy-rules.js?v=field-playtest-1';
+import {PRODUCTION_RULES,squadProduction,BUILDINGS,UPGRADES,CONSTRUCTION_DURATIONS,isUnderConstruction,buildingCost,canAfford,spend,costLabel,mechStats,updatePower} from './economy-rules.js?v=squad-playtest-1';
 /** Deterministic host-authoritative simulation. Seconds, metres, x/z ground plane.
  * step accepts 0..60 seconds and advances in fixed 50ms ticks; snapshots are copies.
  * No wall clock, randomness, dependencies or client trust. */
@@ -21,6 +21,29 @@ export const FIELD_TUNING=Object.freeze({
  sight:Object.freeze({pod:68,worker:22,combat:54,'long-range':66,artillery:61,turret:40,extractor:26,generator:32,reactor:38,relay:36,battery:28,'drop-pad':38,'mech-factory':40,'worker-factory':32,'upgrade-station':34,'repair-station':34,wire:9}),
  range:Object.freeze({combat:33,'long-range':49,artillery:46}),hqBuild:64,mechBuild:48,structureBuild:26
 });
+// Squad balance is persisted per room. Old snapshots keep their original combat.
+export const SQUAD_ROLES=Object.freeze({
+ combat:Object.freeze({label:'Vanguard',description:'Frontline anti-swarm; +25% damage to light bugs, -25% to heavy bugs.',light:1.25,heavy:.75}),
+ 'long-range':Object.freeze({label:'Lancer',description:'Long-range heavy hunter; +75% damage to heavy bugs, -30% to light bugs.',light:.7,heavy:1.75}),
+ artillery:Object.freeze({label:'Artillery',description:'Siege and clustered targets; 7m blast, cannot fire inside 12m.',minRange:12,splashRadius:7}),
+ raider:Object.freeze({label:'Raider',description:'Fast raider that prioritizes exposed workers within local sight.'}),
+ heavy:Object.freeze({label:'Heavy',description:'Slow siege bug that prioritizes nearby structures; +50% damage to structures.'}),
+ guard:Object.freeze({label:'Guard',description:'Defends resources until approached or actually hit.'})
+});
+const structure=e=>!['worker','mech','enemy','hive'].includes(e.type);
+function roleDamage(s,e,t,amount){
+ if(!s.squadVersion)return amount;
+ if(e.type==='mech'&&t.type==='enemy'&&e.role!=='artillery')return amount*(SQUAD_ROLES[e.role||'combat']?.[t.role==='heavy'?'heavy':'light']||1);
+ if(e.type==='enemy'&&e.role==='heavy'&&structure(t))return amount*1.5;
+ return amount;
+}
+function roleTargetRank(s,e,t){
+ if(!s.squadVersion)return 0;
+ if(e.type==='enemy')return e.role==='raider'?(t.type==='worker'?0:1):e.role==='heavy'?(structure(t)?0:1):0;
+ if(e.type==='mech'&&e.role==='combat')return t.type==='enemy'&&t.role!=='heavy'?0:1;
+ if(e.type==='mech'&&e.role==='long-range')return t.role==='heavy'?0:1;
+ return 0;
+}
 const commissioned=e=>!(Number.isFinite(e.progress)&&e.progress<1);
 // The authoritative sight test, ground fog, and minimap share this sensor model.
 // A completed building retains passive sight even when it has no power.
@@ -76,8 +99,11 @@ function economyMoveFormation(s,es,target){
  const mechs=es.filter(e=>e.type==='mech').sort((a,b)=>a.id.localeCompare(b.id));
  if(!mechs.length)return null;
  const slots=new Map(),workers=es.filter(e=>e.type==='worker');
- for(const [i,e] of mechs.entries())slots.set(e.id,{x:target.x+(i-(mechs.length-1)/2)*13,z:target.z,r:6});
- for(const [i,e] of workers.entries())slots.set(e.id,{x:target.x+(i%3-1)*3,z:target.z+12+Math.floor(i/3)*3,r:1.5});
+ // A 12-chassis line is 155 metres wide. Keep detachments compact enough
+ // to use a basin lane and fit at map edges while maintaining hull separation.
+ const cols=s.squadVersion?Math.min(mechs.length,Math.ceil(Math.sqrt(mechs.length))):mechs.length,rows=Math.ceil(mechs.length/cols);
+ for(const [i,e] of mechs.entries()){const row=Math.floor(i/cols),rowCount=Math.min(cols,mechs.length-row*cols);slots.set(e.id,{x:target.x+(i%cols-(rowCount-1)/2)*13,z:target.z+(row-(rows-1)/2)*13,r:6});}
+ for(const [i,e] of workers.entries())slots.set(e.id,{x:target.x+(i%3-1)*3,z:target.z+(rows-1)*6.5+12+Math.floor(i/3)*3,r:1.5});
  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
  for(const p of slots.values()){minX=Math.min(minX,p.x-p.r);maxX=Math.max(maxX,p.x+p.r);minZ=Math.min(minZ,p.z-p.r);maxZ=Math.max(maxZ,p.z+p.r);}
  const dx=minX<0?-minX:maxX>worldSize(s)?worldSize(s)-maxX:0,dz=minZ<0?-minZ:maxZ>worldSize(s)?worldSize(s)-maxZ:0;
@@ -86,9 +112,10 @@ function economyMoveFormation(s,es,target){
 }
 function unit(id,type,x,z,hp,owner=0,role=''){return {id,type,x,z,hp,maxHp:hp,owner,angle:0,role,status:'idle',cooldown:0,...(type==='mech'?{shotSerial:0,lastShotSide:null,gatlingEngaged:false,gatlingSpin:0}:{})};}
 function event(s,type,x,z,text,extra={}){s.events.push({id:++s.eventId,type,x,z,text,time:s.time,...extra});if(s.events.length>100)s.events.splice(0,s.events.length-100);}
-export function createGame({legacy=false,production=true,map=null,playtest=map===FRONTIER_MAP.id}={}){
+export function createGame({legacy=false,production=true,map=null,playtest=map===FRONTIER_MAP.id,squad=false}={}){
  const s={version:1,time:0,tick:0,remainder:0,phase:'running',endReason:null,resources:180,wave:0,nextWaveAt:225,hvdReadyAt:0,entities:[unit('pod','pod',30,120,1600),unit('hive','hive',132,30,2600,-1),unit('mech-1','mech',36,111,650,1,'combat'),unit('mech-2','mech',24,111,460,2,'long-range'),...Array.from({length:3},(_,i)=>({...unit(`worker-${i+1}`,'worker',25+i*5,132,100),cargo:0,approachSlot:i}))],deposits:[{id:'ore-safe',x:19,z:99,remaining:1600},{id:'ore-mid',x:72,z:92,remaining:2000},{id:'ore-risk',x:109,z:56,remaining:2400}],events:[],eventId:0,nextId:10,kills:0};
  if(playtest&&!legacy)s.playtestVersion=1;
+ if(squad&&s.playtestVersion&&production)s.squadVersion=1;
  s.mission={id:'first-landing',title:'Secure the landing zone',oreDelivered:0,oreTarget:60,extractorBuilt:false,repairStationBuilt:false,repairStationFreeUsed:false,repairStationFreeAvailable:true,repaired:false,turretBuilt:false,swarmDefeated:false,swarmAt:RULES.waveTimes[0],objectives:[],activeObjective:'harvest'};
  // Landing damage makes the free HQ repair lesson visible without jeopardizing the defense.
  s.entities.find(e=>e.id==='mech-1').hp-=120;
@@ -116,8 +143,14 @@ export function createGame({legacy=false,production=true,map=null,playtest=map==
   }
   s.mission.title='Kestrel Basin: establish a foothold and defeat the hive';
  }
+ if(s.squadVersion){
+  s.resources=260;s.stockpiles.conductive=30;
+  // Four hulls, not four per co-op pilot. Each seat controls both roles; solo owns the team.
+  s.entities.push(unit('mech-3','mech',49,109,460,1,'long-range'),unit('mech-4','mech',10,112,650,2,'combat'));
+  s.expansion.earliestAt=0;
+ }
  updateObjectives(s);
- event(s,'notice',30,120,s.productionVersion?'Build your base, escort workers to conductive minerals, assemble reinforcements and destroy the occupied hive.':'Harvest 60 ore, build an extractor and service bay, repair for free, then prepare a turret for the first swarm.');return s;
+ event(s,'notice',30,120,s.squadVersion?'Four mechs deployed. Secure conductive and grow to an 8–12 mech expedition.':s.productionVersion?'Build your base, escort workers to conductive minerals, assemble reinforcements and destroy the occupied hive.':'Harvest 60 ore, build an extractor and service bay, repair for free, then prepare a turret for the first swarm.');return s;
 }
 function updateObjectives(s){
  const m=s.mission;if(!m)return;
@@ -149,7 +182,7 @@ function updateObjectives(s){
  }
  m.activeObjective=m.objectives.find(o=>!o.complete)?.id??'complete';
 }
-function chosen(s,p,c){if(!Array.isArray(c.ids)||!c.ids.length||c.ids.length>12||new Set(c.ids).size!==c.ids.length)return null;const es=c.ids.map(id=>s.entities.find(e=>e.id===id&&live(e)));return es.every(e=>e&&['mech','worker'].includes(e.type)&&(p===0||e.owner===0||e.owner===p))?es:null;}
+function chosen(s,p,c){if(!Array.isArray(c.ids)||!c.ids.length||c.ids.length>(s.squadVersion?12+RULES.workerCap:12)||new Set(c.ids).size!==c.ids.length)return null;const es=c.ids.map(id=>s.entities.find(e=>e.id===id&&live(e)));return es.every(e=>e&&['mech','worker'].includes(e.type)&&(p===0||e.owner===0||e.owner===p))?es:null;}
 function fail(error){return {ok:false,error};}
 export function applyCommand(s,p,c){
  if(![0,1,2].includes(p))return fail('Unknown player.');
@@ -220,7 +253,7 @@ export function applyCommand(s,p,c){
   const mechs=s.entities.filter(e=>live(e)&&e.type==='mech'&&!e.launch&&(p===0||e.owner===p)).sort((a,b)=>dist(a,c)-dist(b,c));const source=mechs[0];
   if(!source||dist(source,c)>65)return fail('Target must be within 65m of your mech.');
   s.hvdReadyAt=s.time+90;
-  for(const e of s.entities)if(live(e)&&hostile(e)&&(segmentDistance(e,source,c)<5||dist(e,c)<12))damage(s,e,e.type==='hive'?220:260);
+  for(const e of s.entities)if(live(e)&&hostile(e)&&(segmentDistance(e,source,c)<5||dist(e,c)<12))damage(s,e,e.type==='hive'?220:260,source);
   event(s,'hvd',source.x,source.z,'PROTOTYPE HVD',{tx:c.x,tz:c.z});finish(s);return {ok:true};
  }
  return fail('Unknown command.');
@@ -314,7 +347,7 @@ function advanceConstruction(s,worker,dt,speed){
 }
 const queuedWorkers=s=>s.entities.filter(e=>live(e)&&e.production&&e.production.kind!=='mech').length;
 const workerCount=s=>s.entities.filter(e=>live(e)&&e.type==='worker').length+queuedWorkers(s);
-export function mechCount(s){return s.entities.filter(e=>live(e)&&(e.type==='mech'||e.production?.kind==='mech')).length;}
+export function mechCount(s){return s.entities.filter(e=>live(e)&&(e.type==='mech'||e.production?.kind==='mech'||(s.squadVersion&&e.type==='drop-pad'&&e.dropJob&&!e.summonedId))).length;}
 function productionCommand(s,p,c){
  if(c.type==='cancel-production'){
   const factory=s.entities.find(e=>e.id===c.factoryId&&live(e));
@@ -329,9 +362,10 @@ function productionCommand(s,p,c){
   if(!['combat','long-range'].includes(c.role))return fail('Choose combat or long-range.');
   if(factory.production||s.entities.some(e=>e.id===factory.launchId&&live(e)&&e.launch))return fail('Foundry is already assembling or launching a mech.');
   if(!factory.powered)return fail('Foundry needs power.');
-  if(mechCount(s)>=PRODUCTION_RULES.mechCap)return fail('Mech cap reached (4 including queued mechs).');
-  if(!canAfford(s,PRODUCTION_RULES.mechCost))return fail('Need 160 alloy + 40 conductive.');
-  spend(s,PRODUCTION_RULES.mechCost);factory.production={kind:'mech',owner:p,role:c.role,progress:0,duration:50,cost:{...PRODUCTION_RULES.mechCost},blocked:false};return {ok:true};
+  const plan=squadProduction(s,c.role);
+  if(mechCount(s)>=plan.cap)return fail(`Mech cap reached (${plan.cap} including queued mechs).`);
+  if(!canAfford(s,plan.cost))return fail(`Need ${costLabel(plan.cost)}.`);
+  spend(s,plan.cost);factory.production={kind:'mech',owner:p,role:c.role,progress:0,duration:plan.duration,cost:{...plan.cost},blocked:false};return {ok:true};
  }
  if(c.type==='worker'){
   const f=s.entities.find(e=>live(e)&&(c.factoryId===undefined?e.type==='pod':e.id===c.factoryId&&e.type==='worker-factory'));
@@ -379,6 +413,7 @@ function economyCommand(s,p,c){
   if(!teamVisible(s,c))return fail('Building position must be in team vision.');
   if(s.entities.some(e=>live(e)&&!['worker','mech','enemy'].includes(e.type)&&dist(e,c)<8)||s.deposits.some(d=>dist(d,c)<6))return fail('Keep buildings and mining deposits clear.');
   if(!servicePlacementClear(s,c.kind,c))return fail('Keep the full service-pad footprint clear.');
+  if(c.kind==='drop-pad'&&s.squadVersion&&mechCount(s)>=squadProduction(s).cap)return fail('Mech cap reached (12 including queued mechs).');
   if(c.kind==='drop-pad'&&s.entities.some(e=>live(e)&&(e.role==='artillery'||e.type==='drop-pad'&&!e.summonedId)))return fail('Only one artillery mech or pending drop is allowed.');
   if(s.entities.filter(e=>live(e)&&e.type===c.kind&&!(c.kind==='drop-pad'&&e.summonedId)).length>=spec.cap)return fail('Building cap reached.');
   const cost=buildingCost(s,c.kind);if(!canAfford(s,cost))return fail(`Need ${costLabel(cost)}.`);
@@ -503,7 +538,41 @@ function travel(s,e,dest,speed,dt,stop=0){
  if(e.type==='enemy'&&s.entities.some(w=>w.type==='wire'&&live(w)&&!isUnderConstruction(w)&&dist(e,w)<6))move*=0.3;
  if(d){e.x+=dx/d*move;e.z+=dz/d*move;e.angle=Math.atan2(dx,dz);}return dist(e,dest)<=stop+0.1&&clearSight(s,e,dest);
 }
-function damage(s,e,amount){if(!live(e)||dropping(s,e))return;e.hp=Math.max(0,e.hp-amount);if(!live(e)){releaseService(s,e);e.status='destroyed';delete e.order;event(s,'explosion',e.x,e.z,`${e.type} destroyed`);if(e.type==='enemy'){s.kills++;s.resources+=3;}}}
+const BUG_SENSE=24, BUG_BITE=5, HIT_MEMORY_SECONDS=30, CROSSFIRE_FOCUS_SECONDS=2.25;
+function damage(s,e,amount,source){
+ if(!live(e)||dropping(s,e)||!(amount>0))return;
+ e.hp=Math.max(0,e.hp-amount);
+ if(!live(e)){
+  releaseService(s,e);e.status='destroyed';delete e.order;delete e.hitAlert;
+  event(s,'explosion',e.x,e.z,`${e.type} destroyed`);if(e.type==='enemy'){s.kills++;s.resources+=3;}
+ }else if(e.type==='enemy'&&live(source)&&source.owner>=0&&!dropping(s,source)){
+  // Real damage gives this survivor a firing position, not global sight or a
+  // pack broadcast. Store plain data so a co-op poll/restore cannot lose it.
+  // Stay committed under simultaneous fire: two pilots on opposite sides
+  // mustn't reverse the bug every volley. Another gun may draw it once the
+  // first has stopped firing for a full artillery cycle, or been destroyed.
+  const a=e.hitAlert;
+  if(!a||a.id===source.id||s.time-a.lastHitAt>CROSSFIRE_FOCUS_SECONDS||!s.entities.some(t=>t.id===a.id&&live(t))){
+   e.hitAlert={id:source.id,x:source.x,z:source.z,lastHitAt:s.time,until:s.time+HIT_MEMORY_SECONDS};
+  }
+ }
+}
+function pursueHit(s,e,dt){
+ const a=e.hitAlert;if(!a)return false;
+ const shooter=s.entities.find(t=>t.id===a.id&&live(t)&&!dropping(s,t));
+ if(shooter&&s.time<=a.until){
+  // Once in ordinary sight, track the shooter. Otherwise go to the last
+  // known firing position, never the current coordinates of an unseen unit.
+  const seen=dist(e,shooter)<BUG_SENSE&&clearSight(s,e,shooter);
+  if(seen){a.x=shooter.x;a.z=shooter.z;a.until=s.time+HIT_MEMORY_SECONDS;}
+  e.target=shooter.id;e.status='attacking';
+  const arrived=travel(s,e,seen?shooter:a,e.role==='heavy'?3.4:4.4,dt,seen?BUG_BITE:0.25);
+  if(seen&&arrived){shoot(s,e,shooter,e.role==='heavy'?19:9,1.2);return true;}
+  if(!arrived&&e.status!=='route-blocked')return true;
+ }
+ // Unreachable, lost, or dead: resume exactly the pre-hit local guard/wave AI.
+ delete e.hitAlert;delete e.routeData;delete e.target;e.status='idle';return false;
+}
 function shoot(s,e,t,amount,interval){
  if(e.cooldown>0||!live(e)||!live(t))return;
  e.cooldown=interval;e.lastShotAt=s.time;e.target=t.id;e.angle=Math.atan2(t.x-e.x,t.z-e.z);
@@ -517,7 +586,15 @@ function shoot(s,e,t,amount,interval){
  }
  // Exactly one paired volley, one damage application and one impact. Never accumulate
  // missed shots while idle or issue a catch-up burst in a single simulation tick.
- event(s,e.type==='enemy'?'enemy-shot':'shot',e.x,e.z,'',{tx:t.x,tz:t.z,...shot});damage(s,t,amount);event(s,'impact',t.x,t.z,'',shot);
+ event(s,e.type==='enemy'?'enemy-shot':'shot',e.x,e.z,'',{tx:t.x,tz:t.z,...shot});damage(s,t,roleDamage(s,e,t,amount),e);event(s,'impact',t.x,t.z,'',shot);
+ if(s.squadVersion&&e.type==='mech'&&e.role==='artillery'){
+  const radius=SQUAD_ROLES.artillery.splashRadius;
+  // Only real blast victims retaliate. No friendly fire or damage through terrain.
+  for(const nearby of s.entities)if(nearby!==t&&live(nearby)&&hostile(nearby)&&dist(nearby,t)<radius&&clearSight(s,t,nearby)){
+   damage(s,nearby,amount*.6*(1-dist(nearby,t)/radius),e);
+   event(s,'impact',nearby.x,nearby.z,'',{...shot,targetId:nearby.id,splash:true});
+  }
+ }
 }
 function finish(s){
  if(s.phase!=='running')return;
@@ -531,6 +608,7 @@ function finish(s){
 function canRebuildArmy(s){
  if(s.entities.some(e=>live(e)&&e.type==='drop-pad'&&e.dropJob&&!e.summonedId))return true;
  const pod=s.entities.find(e=>live(e)&&e.type==='pod');
+ const replacement=squadProduction(s).cost,foundryCost=BUILDINGS['mech-factory'].cost;
  const stocks={alloy:s.resources,conductive:s.stockpiles?.conductive||0};
  for(const w of s.entities.filter(e=>live(e)&&e.type==='worker'))stocks[w.cargoType||'alloy']=(stocks[w.cargoType||'alloy']||0)+(w.cargo||0);
  // No army can clear defended deposits. Only presently safe deposits count.
@@ -559,12 +637,12 @@ function canRebuildArmy(s){
  for(const factory of foundries){
   const powerCost=factory.powered?0:restored.has(factory.id)?80:Infinity;
   if(factory.production?.kind==='mech'&&stocks.alloy>=powerCost+workerReserve){s.recoveryStatus='assembly-pending';return true;}
-  if(!factory.production&&stocks.alloy>=160+powerCost+workerReserve&&stocks.conductive>=40){s.recoveryStatus='rebuild-available';return true;}
+  if(!factory.production&&stocks.alloy>=replacement.alloy+powerCost+workerReserve&&stocks.conductive>=replacement.conductive){s.recoveryStatus='rebuild-available';return true;}
  }
  // A stranded remote job may be cancelled; count only its unfinished refund.
  for(const f of foundries)if(f.production?.kind==='mech')for(const [kind,cost] of Object.entries(f.production.cost))stocks[kind]=(stocks[kind]||0)+cost*Math.max(0,1-f.production.progress);
  let possible=false;
- if(pod&&foundries.length<BUILDINGS['mech-factory'].cap&&stocks.conductive>=90&&stocks.alloy>=340+workerReserve){
+ if(pod&&foundries.length<BUILDINGS['mech-factory'].cap&&stocks.conductive>=replacement.conductive+foundryCost.conductive&&stocks.alloy>=replacement.alloy+foundryCost.alloy+workerReserve){
   for(let x=Math.max(12,pod.x-36);x<=Math.min(worldSize(s)-12,pod.x+36)&&!possible;x+=4)for(let z=Math.max(12,pod.z-36);z<=Math.min(worldSize(s)-26.5,pod.z+36)&&!possible;z+=4){
    const p={x,z};if(dist(p,pod)>34||!servicePlacementClear(s,'mech-factory',p))continue;
    const copy=snapshot(trial);copy.entities.push({...unit('recovery-foundry','mech-factory',x,z,950)});updatePower(copy);
@@ -575,8 +653,31 @@ function canRebuildArmy(s){
  }
  s.recoveryStatus=possible?'rebuild-available':'army-unrecoverable';return possible;
 }
+// Progression, not the clock alone, releases each counterattack. Losing a
+// mech never scales the raid up; 55 seconds between milestones allows recovery.
+const RAIDS=Object.freeze([{r:5,h:1,delay:35},{r:7,h:3,delay:45},{r:10,h:5,delay:55}]);
+function squadWaves(s,ex){
+ if(!ex||ex.stage>=RAIDS.length)return;
+ const tier=ex.stage,w=RAIDS[tier],m=s.mission;
+ const trigger=tier===0?(m.conductiveDelivered>0||s.entities.some(e=>live(e)&&e.type==='extractor'&&e.depositId==='ore-mid'&&commissioned(e)))
+  :tier===1?(m.mechsProduced>=2||m.crystalDelivered>0):s.entities.filter(e=>live(e)&&e.type==='mech').length>=8;
+ if(ex.pendingAt===null&&trigger&&s.time>=(ex.earliestAt||0)){
+  ex.pendingAt=s.time+w.delay;s.nextWaveAt=ex.pendingAt;
+  event(s,'notice',30,120,`Hive raid ${tier+1}/3 in ${w.delay}s: ${w.r} raiders + ${w.h} heavies.`);
+ }
+ if(ex.pendingAt===null||s.time+1e-9<ex.pendingAt)return;
+ const map=mapForState(s),p=map?.retaliation[Math.min(tier,1)]||{x:103,z:71};
+ ex.stage++;ex.pendingAt=null;ex.earliestAt=s.time+55;s.nextWaveAt=null;s.wave++;
+ for(let i=0;i<w.r+w.h;i++){
+  const heavy=(i+1)%3===0&&Math.floor((i+1)/3)<=w.h;
+  const x=p.x+(i%5-2)*3.2,z=p.z+Math.floor(i/5)*3.2;
+  s.entities.push({...unit(`enemy-${s.nextId++}`,'enemy',x,z,heavy?270:95,-1,heavy?'heavy':'raider'),expansionWave:tier+1});
+ }
+ event(s,'wave',p.x,p.z,`Hive raid ${tier+1}/3: ${w.r} raiders and ${w.h} heavies.`);
+}
 function expansionTick(s){
  const expansion=s.expansion;
+ if(s.squadVersion)return squadWaves(s,expansion);
  if(!expansion||expansion.stage>=2)return;
  const triggered=expansion.stage===0?(s.mission.conductiveDelivered>0||s.entities.some(e=>live(e)&&e.type==='extractor'&&e.depositId==='ore-mid')):(s.mission.mechsProduced>0||s.mission.crystalDelivered>0);
  if(triggered&&expansion.pendingAt===null){expansion.pendingAt=s.time+35;s.nextWaveAt=expansion.pendingAt;event(s,'notice',100,65,'Hive retaliation detected. Reinforce your frontier.');}
@@ -682,8 +783,9 @@ function tick(s,dt){
     if(teamVisible(s,target)){o.x=target.x;o.z=target.z;if(dist(e,target)>range||!clearSight(s,e,target))travel(s,e,target,mechStats(e).speed,dt,range-1);}
     else {e.status='searching';travel(s,e,o,mechStats(e).speed,dt,0.5);target=null;}
    }
-   if(!target||dist(e,target)>range)target=s.entities.filter(t=>live(t)&&hostile(t)&&dist(e,t)<=range&&teamVisible(s,t)&&clearSight(s,e,t)).sort((a,b)=>dist(e,a)-dist(e,b))[0];
-   const engaged=!!target&&dist(e,target)<=range&&teamVisible(s,target)&&clearSight(s,e,target);
+   const minRange=s.squadVersion&&e.role==='artillery'?SQUAD_ROLES.artillery.minRange:0;
+   if(!target||dist(e,target)>range||dist(e,target)<minRange)target=s.entities.filter(t=>live(t)&&hostile(t)&&dist(e,t)<=range&&dist(e,t)>=minRange&&teamVisible(s,t)&&clearSight(s,e,t)).sort((a,b)=>roleTargetRank(s,e,a)-roleTargetRank(s,e,b)||dist(e,a)-dist(e,b)||(s.squadVersion?a.id.localeCompare(b.id):0))[0];
+   const engaged=!!target&&dist(e,target)<=range&&dist(e,target)>=minRange&&teamVisible(s,target)&&clearSight(s,e,target);
    if(e.type==='mech'&&e.role==='artillery'){
     e.gatlingEngaged=false;e.gatlingSpin=0;
     if(engaged){e.angle=Math.atan2(target.x-e.x,target.z-e.z);shoot(s,e,target,100*mechStats(e).damageMultiplier,2);}
@@ -703,11 +805,12 @@ function tick(s,dt){
    continue;
   }
   if(e.type==='enemy'){
+   if(pursueHit(s,e,dt))continue;
    let targets=s.entities.filter(t=>live(t)&&!dropping(s,t)&&(['mech','worker','turret','extractor','repair-station','pod'].includes(t.type)||!!BUILDINGS[t.type]));
-   let target=targets.filter(t=>dist(t,e)<24).sort((a,b)=>dist(e,a)-dist(e,b))[0];
+   let target=targets.filter(t=>dist(t,e)<BUG_SENSE&&(!s.squadVersion||clearSight(s,e,t))).sort((a,b)=>roleTargetRank(s,e,a)-roleTargetRank(s,e,b)||dist(e,a)-dist(e,b))[0];
    if(!target&&(e.role==='guard'||e.stationaryGuard))continue;
    target=target||pod;if(!target)continue;e.target=target.id;e.status='attacking';
-   if(travel(s,e,target,e.role==='heavy'?3.4:4.4,dt,5)&&clearSight(s,e,target))shoot(s,e,target,e.role==='heavy'?19:9,1.2);
+   if(travel(s,e,target,e.role==='heavy'?3.4:4.4,dt,BUG_BITE)&&clearSight(s,e,target))shoot(s,e,target,e.role==='heavy'?19:9,1.2);
   }
  }
  for(const f of s.entities)if(f.launchId&&!s.entities.some(e=>e.id===f.launchId&&live(e)&&e.launch))delete f.launchId;

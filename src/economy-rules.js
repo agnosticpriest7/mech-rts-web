@@ -1,5 +1,11 @@
 /** Shared economy catalog and deterministic power allocation; no browser dependencies. */
 export const PRODUCTION_RULES=Object.freeze({mechCost:Object.freeze({alloy:160,conductive:40}),mechDuration:50,mechCap:4,hqWorkerDuration:30,workerFactoryDuration:12});
+// Squad play is opt-in per newly created room. An occupied or reserved chassis
+// uses a team slot; one player's queue cannot crowd the other past the cap.
+const chassis=(alloy,conductive,duration,cap)=>Object.freeze({cost:Object.freeze({alloy,conductive}),duration,cap});
+const SQUAD_CHASSIS=Object.freeze({combat:chassis(105,25,32,12),'long-range':chassis(130,35,40,12)});
+const CLASSIC_CHASSIS=chassis(160,40,50,4);
+export const squadProduction=(s,role='combat')=>s?.squadVersion===1?(SQUAD_CHASSIS[role]||SQUAD_CHASSIS.combat):CLASSIC_CHASSIS;
 // Paid, on-site worker time. Travel is additional; orbital beacons deliberately
 // keep their separate charge/descent sequence instead of pretending to be built.
 export const CONSTRUCTION_DURATIONS=Object.freeze({extractor:6,wire:4,relay:5,battery:7,generator:8,turret:8,reactor:12,'worker-factory':12,'repair-station':12,'upgrade-station':14,'mech-factory':20});

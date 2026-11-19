@@ -77,3 +77,6 @@ header{height:48px!important;padding:0 16px;flex-wrap:nowrap!important;align-con
 .controller-actions-open #selection-actions{outline:1px solid #d9b77c;outline-offset:2px;background:#263932;scroll-padding-inline:6px}
 .controller-actions-open #context-hint{color:#ffdc9d}
 #selection-actions button[aria-haspopup="dialog"]{border-bottom-color:#b69c6c}
+
+/* Squad status remains compact; the detailed composition guide lives in Field Command. */
+#squad-force{color:var(--amber);margin:0 0 4px;letter-spacing:.02em;font:600 12px/16px sans-serif}#squad-force[hidden]{display:none}#squad-guide{font-size:14px;line-height:1.5;color:#c9d9d4;max-width:76ch}#economy-mech-status{font-size:14px;line-height:1.45}#economy-produce-combat,#economy-produce-long-range{font-size:14px;line-height:1.45;white-space:normal}#selection-actions button[data-action="combat"],#selection-actions button[data-action="long-range"]{white-space:nowrap;max-width:300px}

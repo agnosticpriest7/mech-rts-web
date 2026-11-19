@@ -6,6 +6,8 @@
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
 const smooth=x=>{x=clamp(x);return x*x*(3-2*x);};
 const mix=(a,b,t)=>a+(b-a)*t;
+// Extra starters retain separate touchdowns and finish recovery before the 18s handoff.
+export function startingMechImpact(id,squad=false){return ({'mech-1':10.5,'mech-2':11.2,...(squad?{'mech-3':11.8,'mech-4':12.4}:{})})[id]??null;}
 export function sampleMechLanding(time,{impactTime=10.5}={}){
  const t=(Number.isFinite(time)?time:0)-impactTime;
  // Always falling while visible. Braking eases velocity, never suspends the unit.

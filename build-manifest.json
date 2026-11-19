@@ -10,6 +10,11 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "path": "THREE-LICENSE.txt",
+      "bytes": 1081,
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+    },
+    {
       "path": "assets/alloy-extractor-console.glb",
       "bytes": 990356,
       "sha256": "86b45550c05a6f52ed341b15c809bada77129a87545030a8b8233b339832366f"
@@ -81,8 +86,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 17646,
-      "sha256": "73bff14190910d8cb7b59386da127d6684de956b53a20bb16322033fdf5b4107"
+      "bytes": 17883,
+      "sha256": "04888f1914181c6b37ecce5bf71d8b7df6a8561c86d2268d9c65e155be19eb59"
     },
     {
       "path": "src/alien-art.js",
@@ -101,8 +106,8 @@
     },
     {
       "path": "src/client.js",
-      "bytes": 112023,
-      "sha256": "18b316430dc6ecd59f30f0ee63cded45be0f1863f5059457340035df68f9e5d5"
+      "bytes": 113331,
+      "sha256": "eaa745111b0bc6eadba104a4bf048199fb02e8fa24bdbfafafcb22afc487b425"
     },
     {
       "path": "src/drop-pad-art.js",
@@ -116,8 +121,8 @@
     },
     {
       "path": "src/economy-rules.js",
-      "bytes": 7424,
-      "sha256": "52e5eef496e8e3e051e6b7cadf894d4a70dd802d2f68d62e2a899d88ab1a0c05"
+      "bytes": 7973,
+      "sha256": "476ed25f85cbf9b309198bbae6faa0f616f1dac72e06dafac4c747578ac88c0d"
     },
     {
       "path": "src/economy-ui.js",
@@ -146,8 +151,8 @@
     },
     {
       "path": "src/landing.js",
-      "bytes": 8787,
-      "sha256": "240e3c4eb58da5387a02eede09e43f6aa8d9e59a9da94ab609512d23e18a7d7b"
+      "bytes": 9182,
+      "sha256": "83bf7cc38846e66aa1424a945dce14bab89ca7686cf2e3c365ba6b856fcae9f0"
     },
     {
       "path": "src/mech-factory.js",
@@ -156,13 +161,13 @@
     },
     {
       "path": "src/mech-landing.js",
-      "bytes": 4944,
-      "sha256": "8552e1751eaee0a4121a6ff67b9c27063523f1e9f6086c9ba04a4b17e9f17878"
+      "bytes": 5179,
+      "sha256": "7b9c77b49faf1ff186d78776051219f99334a2bfd0b4a491552b152550bc9413"
     },
     {
       "path": "src/mission-ui.js",
-      "bytes": 5024,
-      "sha256": "7348b09692cc85b1438831523060c5a1003f80ee9cdadae632b999bd812e6285"
+      "bytes": 5563,
+      "sha256": "62d02f7ecb16426e056f60ee3425e88fc4b629a581b6c15de8143bed05d617ca"
     },
     {
       "path": "src/motion.js",
@@ -176,8 +181,8 @@
     },
     {
       "path": "src/room-transport.js",
-      "bytes": 2808,
-      "sha256": "9e72eba7b69e04df108e2255f635f9f0f145d73247cd4cadc9e1034fd41965ba"
+      "bytes": 2830,
+      "sha256": "092b38c0b6b091adcf4d08f8410aa53c700d62c059dcbcd653db05d2dd616f4b"
     },
     {
       "path": "src/runtime-config.js",
@@ -196,13 +201,18 @@
     },
     {
       "path": "src/simulation.js",
-      "bytes": 61531,
-      "sha256": "6b13f6005d01225500b95fa1666bce20062cfbf7b38351a3868adc7243791441"
+      "bytes": 68584,
+      "sha256": "511c8d27c23f3ff5edbede99857870a69f45205dbbd1b74628dc279abe9d222d"
+    },
+    {
+      "path": "src/squad-ui.js",
+      "bytes": 603,
+      "sha256": "f20ef32854341955b3f785475e4d5ce768394b48447ed9161396d61c8e463db1"
     },
     {
       "path": "src/style.css",
-      "bytes": 25327,
-      "sha256": "01063bb74f2189649669d8dbae3738d91c708e385199e376417f044c87d5bf13"
+      "bytes": 25916,
+      "sha256": "08a3f1f3c6f719489dc3dff64f4cd4fd960ed6942fc87b2ace8092a2b47ea7ad"
     },
     {
       "path": "src/supply-landing.js",
@@ -223,11 +233,6 @@
       "path": "src/world-scale.js",
       "bytes": 1466,
       "sha256": "786a4854f9a04fd1b60b607d2150a6ba075470bdcd2ba7f3443a54a8cebe1462"
-    },
-    {
-      "path": "THREE-LICENSE.txt",
-      "bytes": 1081,
-      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
     },
     {
       "path": "vendor-three/addons/loaders/GLTFLoader.js",
@@ -254,5 +259,6 @@
       "bytes": 658900,
       "sha256": "104f56145899722094556490d787aae0617cc2fc3382f31df02d724ea1aee341"
     }
-  ]
+  ],
+  "playtestRevision": "squad-playtest-1"
 }

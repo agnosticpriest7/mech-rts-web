@@ -1,7 +1,7 @@
-import { HttpRoomSocket as WebSocket } from './room-transport.js?v=field-playtest-1';
+import { HttpRoomSocket as WebSocket } from './room-transport.js?v=squad-playtest-1';
 import { FRONTIER_MAP } from './frontier-map.js';
 import { createBasinTerrain } from './basin-terrain.js';
-import { contextualOrder, selectionActions, cyclePlayableUnit, similarUnitIds } from './selection-controls.js?v=field-playtest-1';
+import { contextualOrder, selectionActions, cyclePlayableUnit, similarUnitIds } from './selection-controls.js?v=squad-playtest-1';
 
 import * as THREE from 'three';
 
@@ -9,11 +9,11 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
-import { INTRO_DURATION, LANDING_IMPACTS, sampleLanding, createLandingScene } from './landing.js';
+import { INTRO_DURATION, landingImpacts, sampleLanding, createLandingScene } from './landing.js?v=squad-playtest-1';
 
-import { createMechLandingRig, sampleMechLanding } from './mech-landing.js';
+import { createMechLandingRig, sampleMechLanding, startingMechImpact } from './mech-landing.js?v=squad-playtest-1';
 
-import { BUILDINGS, UPGRADES, PRODUCTION_RULES, buildingCost, mechStats } from './economy-rules.js?v=field-playtest-1';
+import { BUILDINGS, UPGRADES, squadProduction, buildingCost, mechStats } from './economy-rules.js?v=squad-playtest-1';
 
 import { createAlienRig, ALIEN_ASSETS } from './alien-art.js';
 
@@ -33,20 +33,22 @@ import { structureTerrainZones, terrainIntersectsZones } from './terrain-clearan
 
 import { WORLD_SCALE, TACTICAL_CAMERA, sampleTacticalCamera, cameraDampingAlpha } from './world-scale.js';
 
-import { RESOURCE_COLORS, resourceKind, resourceBalance, formatCost, affordable, shortResource, buildingLabel, coverageStatus, displayAmount, constructionNote, constructionStatus } from './economy-ui.js?v=field-playtest-1';
+import { RESOURCE_COLORS, resourceKind, resourceBalance, formatCost, affordable, shortResource, buildingLabel, coverageStatus, displayAmount, constructionNote, constructionStatus } from './economy-ui.js?v=squad-playtest-1';
 
-import { createGame, teamVisible, sensorRadius, buildReach, movementMultiplier, servicePlacementClear } from './simulation.js?v=field-playtest-1';
+import { createGame, teamVisible, sensorRadius, buildReach, movementMultiplier, servicePlacementClear } from './simulation.js?v=squad-playtest-1';
 
-import { workerClip, objectiveTarget, objectiveHint } from './mission-ui.js?v=field-playtest-1';
+import { squadRoster, squadRoleDescription } from './squad-ui.js?v=squad-playtest-1';
+
+import { workerClip, objectiveTarget, objectiveHint } from './mission-ui.js?v=squad-playtest-1';
 
 import { SnapshotTimeline, SnapshotTrack, LocomotionBlend, dampAngle } from './motion.js';
 
 import { GatlingAudio } from './gatling-audio.js';
 import { MusicPlayer } from './music-player.js?v=menu-2';
 
-import { GatlingShots, GatlingRotors, authoritativeSide, rotorBlurOpacity } from './weapons.js?v=field-playtest-1';
+import { GatlingShots, GatlingRotors, authoritativeSide, rotorBlurOpacity } from './weapons.js?v=squad-playtest-1';
 
-import { createGamepadReader, createMenuDirectionReader, createShoulderGestureReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js?v=field-playtest-1';
+import { createGamepadReader, createMenuDirectionReader, createShoulderGestureReader, wrapIndex, controllerProfile, diagnoseController, gamepadPolicyAllowed, setInputMode } from './gamepad.js?v=squad-playtest-1';
 
 const graphicsProfile=controllerProfile(navigator.userAgent);
 
@@ -272,7 +274,7 @@ function applyRoom(){
 
  $('room-name').textContent=room.code;$('pilot-count').textContent=`${room.players.filter(p=>p.connected).length} / ${room.mode==='coop'?2:1} PILOTS CONNECTED`;
 
- $('room-note').textContent=room.mode==='coop'?'Share this room code with the other browser on this same hosted demo. Each pilot owns one mech; economy and workers are shared.':'Solo field test: you control both mechs and the shared economy.';
+ $('room-note').textContent=room.mode==='coop'?'Share this room code with the other browser on this same hosted demo. Each pilot commands their own mechs; economy and workers are shared.':'Solo field test: you control all mechs and the shared economy.';
 
  $('launch').disabled=playerId===2||(room.mode==='coop'&&room.players.filter(p=>p.connected).length<2);$('launch').textContent=playerId===2?'WAITING FOR HOST':'DEPLOY TO BASIN ↗';
 
@@ -490,7 +492,7 @@ function reconcile(){if(!state)return;clearStructureTerrain();
 
  for(const event of state.events){if(event.id<=lastEvent)continue;lastEvent=event.id;if(event.type==='notice'||event.type==='wave')toast(event.text);if(event.type==='wave')sound('wave');if(['shot','enemy-shot','hvd','explosion','impact','build'].includes(event.type)&&visionAt(event.x,event.z))pendingEffects.push(event);}
 
- if(state.phase!=='running'&&gameStarted){if(!$('economy-modal').hidden)closeEconomy();$('end-screen').hidden=false;$('end-title').textContent=state.phase==='won'?(state.productionVersion?'Hive neutralized.':state.economyVersion?'Powered frontier established.':state.mission?'Foothold established.':'Hive neutralized.'):state.endReason==='army_unrecoverable'?'Assault force exhausted.':state.endReason==='mechs_destroyed'?'Both mechs lost.':'Drop pod lost.';$('end-text').textContent=`${state.phase==='won'?(state.mission?state.productionVersion?'The hive has fallen. Your foothold survives.':state.economyVersion?'The landing zone is secure, the outpost is powered, and upgraded mechs have opened the crystal frontier.':'The ground-anchor HQ is secure, mining is online, and the first swarm has been stopped.':'The landing zone is secure.'):state.endReason==='army_unrecoverable'?'No mechs remain and the team cannot fund or gather replacement materials. Restart to try another expansion route.':state.endReason==='mechs_destroyed'?'The assault force is gone. Retreat for repairs before a mech is destroyed.':'Regroup and protect the shared base.'} Mission ${formatTime(state.time)} · ${state.kills} hostiles neutralized.`;$('restart').disabled=playerId===2;}
+ if(state.phase!=='running'&&gameStarted){if(!$('economy-modal').hidden)closeEconomy();$('end-screen').hidden=false;$('end-title').textContent=state.phase==='won'?(state.productionVersion?'Hive neutralized.':state.economyVersion?'Powered frontier established.':state.mission?'Foothold established.':'Hive neutralized.'):state.endReason==='army_unrecoverable'?'Assault force exhausted.':state.endReason==='mechs_destroyed'?'All mechs lost.':'Drop pod lost.';$('end-text').textContent=`${state.phase==='won'?(state.mission?state.productionVersion?'The hive has fallen. Your foothold survives.':state.economyVersion?'The landing zone is secure, the outpost is powered, and upgraded mechs have opened the crystal frontier.':'The ground-anchor HQ is secure, mining is online, and the first swarm has been stopped.':'The landing zone is secure.'):state.endReason==='army_unrecoverable'?'No mechs remain and the team cannot fund or gather replacement materials. Restart to try another expansion route.':state.endReason==='mechs_destroyed'?'The assault force is gone. Retreat for repairs before a mech is destroyed.':'Regroup and protect the shared base.'} Mission ${formatTime(state.time)} · ${state.kills} hostiles neutralized.`;$('restart').disabled=playerId===2;}
 
 }
 
@@ -546,7 +548,7 @@ function updateObjectives(){
 
  const target=objectiveTarget(state),mission=state.mission;
 
- $('objective-title').textContent=target.title;$('objective-hint').textContent=state.productionVersion&&!state.entities.some(e=>e.type==='mech'&&e.hp>0)?'ASSAULT FORCE LOST. Keep HQ alive. FIELD COMMAND → BUILD: assemble replacement mechs. Mining and production can continue.':mission?objectiveHint(target.id,controllerActive):'Secure alloy. Hold the pod. Bring both pilots home.';
+ $('objective-title').textContent=target.title;$('objective-hint').textContent=state.productionVersion&&!state.entities.some(e=>e.type==='mech'&&e.hp>0)?'ASSAULT FORCE LOST. Keep HQ alive. FIELD COMMAND → BUILD: assemble replacement mechs. Mining and production can continue.':mission?objectiveHint(target.id,controllerActive,state):'Secure alloy. Hold the pod. Bring both pilots home.';
 
  const list=$('objective-checklist');list.replaceChildren();
 
@@ -566,10 +568,12 @@ function updateHUD(){if(!state)return;$('resources').textContent=displayAmount(s
 
  updateObjectives();$('repair-bay-cost').textContent=state.mission?.repairStationFreeUsed?'50 ALLOY':'FIRST BAY FREE';
 
+ const roster=squadRoster(state);$('squad-force').hidden=!state.squadVersion;$('squad-force').textContent=`TEAM ${roster.active} + ${roster.queued} QUEUED / ${squadProduction(state,'combat').cap}`;$('squad-guide').hidden=!state.squadVersion;
  const mechs=state.entities.filter(e=>e.type==='mech');const list=$('unit-list');for(const b of [...list.children])if(!mechs.some(e=>b.id==='select-'+e.id))list.removeChild(b);for(const e of mechs)if(!$('select-'+e.id)){const b=document.createElement('button');b.id=`select-${e.id}`;b.onclick=()=>selectIds([e.id]);list.appendChild(b);}for(const e of mechs){const b=$(`select-${e.id}`);b.textContent=`${mechLabel(e)} ${Math.ceil(e.hp/e.maxHp*100)}%`;b.classList.toggle('selected',selected.has(e.id));b.disabled=e.hp<=0||!controlled(e);}
 
  const units=state.entities.filter(e=>selected.has(e.id)&&e.hp>0);if(units.length===1){const e=units[0];$('selected-name').textContent=e.type==='mech'?`${e.role==='artillery'?'V5 / ORBITAL ARTILLERY':e.role==='combat'?'M06 / VANGUARD':'M06 / LANCER'}`:buildingLabel(e.type).toUpperCase();$('selected-info').textContent=`${Math.ceil(e.hp)} / ${e.maxHp} HP · ${e.status.toUpperCase()}${e.type==='worker'?` · ${displayAmount(e.cargo)} ${shortResource(e.cargoType).toUpperCase()} CARRIED`:e.powerDemand!==undefined?` · ${e.powered?'POWERED':e.powerConnected?'NO SUPPLY':'OUT OF GRID'}`:e.upgradeJob?` · REFIT ${Math.floor(e.upgradeJob.progress*100)}%`:''}`;}else{$('selected-name').textContent=units.length?`${units.length} UNITS SELECTED`:'Select a unit';$('selected-info').textContent=units.length?'Workers haul typed resources back to HQ.':'Left click to select. Right click to give an order.';}
 
+ if(state.squadVersion&&units.length===1&&units[0].type==='mech')$('selected-info').textContent+=' · '+squadRoleDescription(units[0].role);if(state.squadVersion&&units.length>1)$('selected-info').textContent=units.some(e=>e.type==='mech')?'Move as a squad. Vanguard screens light bugs; Lancer targets heavies.':'Workers haul typed resources back to HQ.';
  if(units.length===1&&units[0].production)$('selected-info').textContent+=' · '+productionText(units[0]);if(units.length===1&&units[0].type==='relay')$('selected-info').textContent+=' · 30m POWER RADIUS';if(units.length===1&&units[0].construction&&units[0].progress<1)$('selected-info').textContent=constructionStatus(units[0]);$('selected-info').title=$('selected-info').textContent;$('repair').disabled=!units.some(e=>e.type==='mech'&&!e.launch);renderEconomy();renderSelectionActions();drawMinimap();
 
 }
@@ -1022,15 +1026,15 @@ function renderEconomy(){
 
  if(fs!==factorySignature){factorySignature=fs;const list=$('economy-foundries');list.replaceChildren();for(const e of factories){const b=document.createElement('button');b.id='economy-foundry-'+e.id;b.onclick=()=>{chosenMechFactory=e.id;renderEconomy();};list.appendChild(b);}}
 
- const foundry=mechFactory(),pending=foundry?.production,live=mechs.filter(e=>e.hp>0&&e.role!=='artillery').length,queued=factories.filter(e=>e.production).length;
+ const foundry=mechFactory(),pending=foundry?.production,roster=squadRoster(state),live=roster.active,queued=roster.queued,cap=squadProduction(state,'combat').cap;
 
  for(const e of factories){const b=$('economy-foundry-'+e.id);b.textContent=`${e.id} · ${Math.round(e.x)}, ${Math.round(e.z)} · ${productionText(e)}`;b.classList.toggle('selected',e.id===foundry?.id);}
 
  $('economy-mech-production').hidden=!state.productionVersion;
 
- $('economy-mech-status').textContent=!foundry?'Build a mech foundry in power coverage. Its assembly lane must remain clear.':`${productionText(foundry)}. ${live} active + ${queued} queued / ${PRODUCTION_RULES.mechCap} team mechs. New mechs belong to the pilot ordering them. ${pending?'Cancel refunds unused work.':''}`;
+ $('economy-mech-status').textContent=`${foundry?productionText(foundry):'Build a powered foundry; keep its assembly lane clear.'} ${live} active + ${queued} queued / ${cap} team chassis${state.squadVersion?' (including artillery)':''}. New mechs belong to the ordering pilot. ${state.squadVersion?'Start with 4; build toward an 8–12 mech force.':''} ${pending?'Cancel refunds unused work.':''}`;
 
- for(const role of ['combat','long-range']){const b=$('economy-produce-'+role);b.textContent=`BUILD ${role==='combat'?'VANGUARD':'LANCER'} · ${formatCost(PRODUCTION_RULES.mechCost).toUpperCase()} · ${PRODUCTION_RULES.mechDuration}s`;b.disabled=!state.productionVersion||!foundry||!!pending||!!foundry.launchId||!foundry.powered||live+queued>=PRODUCTION_RULES.mechCap;b.classList.toggle('unaffordable',!affordable(state,PRODUCTION_RULES.mechCost));}
+ for(const role of ['combat','long-range']){const b=$('economy-produce-'+role),spec=squadProduction(state,role);b.textContent=`BUILD ${role==='combat'?'VANGUARD':'LANCER'} · ${formatCost(spec.cost).toUpperCase()} · ${spec.duration}s`;b.title=state.squadVersion?squadRoleDescription(role):b.textContent;b.disabled=!state.productionVersion||!foundry||!!pending||!!foundry.launchId||!foundry.powered||live+queued>=spec.cap||!affordable(state,spec.cost);b.classList.toggle('unaffordable',!affordable(state,spec.cost));}
 
  $('economy-cancel-production').hidden=!pending;$('economy-cancel-production').disabled=!pending||!(playerId===0||pending.owner===playerId);
 
@@ -1108,13 +1112,13 @@ const clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);
   }
  }
 
- const landingActive=introActive(),introTime=landingActive?introPresentation.advance(rawDt,performance.now()/1000,paused||!connected):INTRO_DURATION,landing=sampleLanding(introTime,{reducedMotion});
+ const landingActive=introActive(),introTime=landingActive?introPresentation.advance(rawDt,performance.now()/1000,paused||!connected):INTRO_DURATION,landing=sampleLanding(introTime,{reducedMotion,squad:!!state?.squadVersion});
 
- landingScene.update(introTime,{active:landingActive,settled:gameStarted&&!landingActive,reducedMotion});fogPlane.visible=gameStarted&&!landingActive;objectiveMarker.visible=gameStarted&&!landingActive&&!!state?.mission&&objectiveTarget(state).id!=='complete';
+ landingScene.update(introTime,{active:landingActive,settled:gameStarted&&!landingActive,reducedMotion,squad:!!state?.squadVersion});fogPlane.visible=gameStarted&&!landingActive;objectiveMarker.visible=gameStarted&&!landingActive&&!!state?.mission&&objectiveTarget(state).id!=='complete';
 
  if(landingActive){camera.position.fromArray(landing.camera.position);camera.lookAt(...landing.camera.lookAt);$('intro-caption').textContent=landing.caption;$('intro-progress').style.transform=`scaleX(${introTime/INTRO_DURATION})`;
 
-  if(!paused&&connected&&introTime>=introSoundTime)for(const impact of LANDING_IMPACTS)if(impact>introSoundTime&&impact<=introTime)sound('explosion');introSoundTime=introTime;
+  if(!paused&&connected&&introTime>=introSoundTime)for(const impact of landingImpacts(!!state?.squadVersion))if(impact>introSoundTime&&impact<=introTime)sound('explosion');introSoundTime=introTime;
 
  }
 
@@ -1128,7 +1132,7 @@ const clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);
 
  if(e.type==='worker')g.visible=(e.hp>0||state.time-(e.deadAt??-99)<1.6)&&(!landingActive||landing.crewVisible);
 
- if(e.type==='mech')g.visible=(e.hp>0||(e.role==='artillery'&&state.time-(e.deadAt??-99)<5))&&(!landingActive||!['mech-1','mech-2'].includes(e.id)||sampleMechLanding(introTime,{impactTime:e.id==='mech-2'?11.2:10.5}).visible);
+ if(e.type==='mech')g.visible=(e.hp>0||(e.role==='artillery'&&state.time-(e.deadAt??-99)<5))&&(!landingActive||startingMechImpact(e.id,!!state.squadVersion)===null||sampleMechLanding(introTime,{impactTime:startingMechImpact(e.id,!!state.squadVersion)}).visible);
 
  g.position.y=e.type==='pod'&&landingActive?landing.hqOffsetY+(g.userData.deployAction?0:landing.hqProxyOffsetY):0;
 
@@ -1146,7 +1150,7 @@ const clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);
 
   g.userData.mixer?.update(animationDt);
 
-  if(landingActive&&['mech-1','mech-2'].includes(e.id)){g.userData.landingRig?.capturePlaybackPose();const options={impactTime:e.id==='mech-2'?11.2:10.5},drop=g.userData.landingRig?g.userData.landingRig.apply(introTime,options):sampleMechLanding(introTime,options);g.position.y=drop.altitude;g.userData.landingPoseActive=true;}
+  if(landingActive&&startingMechImpact(e.id,!!state.squadVersion)!==null){g.userData.landingRig?.capturePlaybackPose();const options={impactTime:startingMechImpact(e.id,!!state.squadVersion)},drop=g.userData.landingRig?g.userData.landingRig.apply(introTime,options):sampleMechLanding(introTime,options);g.position.y=drop.altitude;g.userData.landingPoseActive=true;}
 
   const motorOn=state.phase==='running'&&e.hp>0&&gameStarted&&connected&&Number.isFinite(e.gatlingStartedAt)&&renderTime>=e.gatlingStartedAt&&(e.gatlingEngaged||renderTime<(e.gatlingStoppedAt??-Infinity));
 
@@ -1232,7 +1236,7 @@ function renderSelectionActions(){
  lastUnitActivation=null;
  if(action==='clear'){setPlacement(null);selectIds([]);closeControllerUI();}else if(action==='build')openEconomy('build');else if(action==='power')openEconomy('power');else if(action==='upgrades')openEconomy('upgrades');else if(action==='repair')repair();else if(action==='objective'){$('objective').classList.toggle('expanded');focusObjective();}else if(action==='hq'){const hq=state.entities.find(e=>e.type==='pod'&&e.hp>0);if(hq){selectIds([hq.id]);focus.set(hq.x,0,hq.z);aimPoint.copy(focus);}}else if(single){if(action==='worker')command(single.type==='pod'?{type:'worker'}:{type:'worker',factoryId:single.id});else if(action==='cancel')command({type:'cancel-production',factoryId:single.id});else if(action==='cancel-construction')command({type:'cancel-construction',targetId:single.id});else command({type:'mech',factoryId:single.id,role:action});}};box.appendChild(b);}}
 
- for(const b of $('selection-actions').children){const a=b.dataset.action;b.disabled=['worker','combat','long-range'].includes(a)&&!!(single?.production||single?.launchId||single?.powered===false);if(a==='repair')b.disabled=!chosen.some(e=>e.type==='mech'&&!e.launch);if(a==='cancel')b.disabled=!single?.production||(playerId&&single.production.owner!==0&&single.production.owner!==playerId);if(a==='worker'){if(single?.type==='pod')b.disabled=$('economy-hq-worker').disabled;b.title=single?.type==='pod'?$('economy-hq-worker').textContent:$('economy-worker').textContent;b.textContent=b.title.includes('FREE')?'WORKER · FREE':`WORKER · ${single?.type==='pod'?40:30}A`;}if(a==='combat'||a==='long-range'){b.title=$('economy-produce-'+a).textContent;b.textContent=a==='combat'?'VANGUARD':'LANCER';}}
+ for(const b of $('selection-actions').children){const a=b.dataset.action;b.disabled=['worker','combat','long-range'].includes(a)&&!!(single?.production||single?.launchId||single?.powered===false);if(a==='repair')b.disabled=!chosen.some(e=>e.type==='mech'&&!e.launch);if(a==='cancel')b.disabled=!single?.production||(playerId&&single.production.owner!==0&&single.production.owner!==playerId);if(a==='worker'){if(single?.type==='pod')b.disabled=$('economy-hq-worker').disabled;b.title=single?.type==='pod'?$('economy-hq-worker').textContent:$('economy-worker').textContent;b.textContent=b.title.includes('FREE')?'WORKER · FREE':`WORKER · ${single?.type==='pod'?40:30}A`;}if(a==='combat'||a==='long-range'){const spec=squadProduction(state,a),roster=squadRoster(state);b.disabled=b.disabled||!state.productionVersion||roster.active+roster.queued>=spec.cap||!affordable(state,spec.cost);b.title=$('economy-produce-'+a).textContent;b.textContent=`${a==='combat'?'VANGUARD':'LANCER'} · ${spec.cost.alloy}A + ${spec.cost.conductive}C · ${spec.duration}s`;}}
 
  renderControlHint();
 
